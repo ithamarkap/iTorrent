@@ -1,0 +1,13 @@
+{
+  "name": "gui",
+  "private": true,
+  "version": "0.0.0",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^40.2.1"
+  }
+}

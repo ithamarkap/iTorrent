@@ -148,4 +148,98 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    // Peer List Viewer functionality
+    const selectTorrentBtn = document.getElementById('select-torrent-btn');
+    const torrentFileInput = document.getElementById('torrent-file-input');
+    const magnetPeerLink = document.getElementById('magnet-peer-link');
+    const getPeersBtn = document.getElementById('get-peers-btn');
+    const peerStatus = document.getElementById('peer-status');
+    const peerResults = document.getElementById('peer-results');
+
+    let selectedTorrentPath = null;
+
+    // File selection for peer viewer
+    if (selectTorrentBtn && torrentFileInput) {
+        selectTorrentBtn.addEventListener('click', () => {
+            torrentFileInput.click();
+        });
+
+        torrentFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                const file = e.target.files[0];
+                // Use Electron API to get full path if available, otherwise fallback to name (which will fail for backend)
+                if (window.electronAPI && window.electronAPI.getFilePath) {
+                    selectedTorrentPath = window.electronAPI.getFilePath(file);
+                } else {
+                    selectedTorrentPath = file.path || file.name;
+                }
+
+                peerStatus.textContent = `Selected: ${file.name}`;
+                peerStatus.style.color = 'var(--success-color)';
+            }
+        });
+    }
+
+    // Get peers button
+    if (getPeersBtn) {
+        getPeersBtn.addEventListener('click', async () => {
+            const magnetUrl = magnetPeerLink.value.trim();
+
+            if (!selectedTorrentPath && !magnetUrl) {
+                peerStatus.textContent = 'Please select a torrent file or paste a magnet link';
+                peerStatus.style.color = 'var(--error-color)';
+                return;
+            }
+
+            peerStatus.textContent = 'Fetching peers...';
+            peerStatus.style.color = 'var(--text-secondary)';
+            peerResults.style.display = 'none';
+
+            try {
+                const payload = magnetUrl
+                    ? { type: 'magnet', url: magnetUrl }
+                    : { type: 'file', path: selectedTorrentPath };
+
+                const response = await fetch('/api/get-peers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    displayPeers(result);
+                    peerStatus.textContent = 'Peers retrieved successfully!';
+                    peerStatus.style.color = 'var(--success-color)';
+                } else {
+                    peerStatus.textContent = `Error: ${result.error}`;
+                    peerStatus.style.color = 'var(--error-color)';
+                }
+            } catch (error) {
+                peerStatus.textContent = `Error: ${error.message}`;
+                peerStatus.style.color = 'var(--error-color)';
+            }
+        });
+    }
+
+    function displayPeers(data) {
+        document.getElementById('peer-torrent-name').textContent = data.torrent_name;
+        document.getElementById('peer-count').textContent = `${data.peer_count} peers found`;
+
+        const tbody = document.getElementById('peer-table-body');
+        tbody.innerHTML = '';
+
+        data.peers.forEach(peer => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${peer.ip}</td>
+                <td>${peer.port}</td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        peerResults.style.display = 'block';
+    }
+
 }); // End DOMContentLoaded

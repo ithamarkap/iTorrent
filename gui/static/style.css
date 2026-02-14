@@ -255,4 +255,34 @@ code {
 
 .remove-btn {
     color: var(--error-color);
+}/* Peer Table Styles */
+.peer-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+.peer-table th {
+    background: var(--bg-tertiary);
+    padding: 10px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.peer-table td {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+}
+
+.peer-table tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+
+#peer-table-container {
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-secondary);
 }

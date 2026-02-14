@@ -11,13 +11,14 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 })
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld(
     'electronAPI', {
     selectFile: () => ipcRenderer.invoke('select-file'),
-    selectDirectory: () => ipcRenderer.invoke('select-directory')
+    selectDirectory: () => ipcRenderer.invoke('select-directory'),
+    getFilePath: (file) => webUtils.getPathForFile(file)
 }
 );

@@ -43,6 +43,45 @@
                     <button class="secondary-btn" id="change-dir-btn">Change</button>
                 </div>
 
+                <!-- Peer List Viewer -->
+                <div class="card peer-viewer">
+                    <h3>Peer List Viewer</h3>
+                    <p style="color: var(--text-secondary); font-size: 14px;">Get peer list from torrent file or magnet
+                        link</p>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <button class="primary-btn" id="select-torrent-btn">Select .torrent File</button>
+                        <input type="file" id="torrent-file-input" accept=".torrent" style="display: none;">
+                    </div>
+
+                    <div class="input-group" style="margin-bottom: 20px;">
+                        <input type="text" placeholder="or paste Magnet Link..." id="magnet-peer-link">
+                        <button class="secondary-btn" id="get-peers-btn">Get Peers</button>
+                    </div>
+
+                    <div id="peer-status" style="margin-bottom: 15px; color: var(--text-secondary); font-size: 14px;">
+                    </div>
+
+                    <div id="peer-results" style="display: none;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <strong id="peer-torrent-name" style="color: var(--accent-color);"></strong>
+                            <span id="peer-count" style="color: var(--text-secondary);"></span>
+                        </div>
+                        <div id="peer-table-container" style="max-height: 300px; overflow-y: auto;">
+                            <table class="peer-table">
+                                <thead>
+                                    <tr>
+                                        <th>IP Address</th>
+                                        <th>Port</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="peer-table-body">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Seeding Settings -->
                 <div class="card settings">
                     <h3>Seeding Settings</h3>

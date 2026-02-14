@@ -8,7 +8,7 @@ import bencodepy
 
 
 class TorrentClass:
-    """Represents a parsed torrent with all necessary metadata."""
+    # Represents a parsed torrent with all necessary metadata.
     
     def __init__(self, name: str, info_hash: bytes, size: int, announce: str, trackers: list = None):
         self.name = name
@@ -32,6 +32,7 @@ def parse_torrent_file(file_path: str) -> TorrentClass:
         FileNotFoundError: If file doesn't exist
         ValueError: If file is not a valid torrent
     """
+    # Decodes the torrent file (bencode format)
     with open(file_path, 'rb') as f:
         data = bencodepy.decode(f.read())
     
@@ -39,7 +40,7 @@ def parse_torrent_file(file_path: str) -> TorrentClass:
     info = data[b'info']
     info_hash = hashlib.sha1(bencodepy.encode(info)).digest()
     
-    # Extract metadata
+    # Extract the name
     name = info[b'name'].decode('utf-8')
     
     # Calculate total size
@@ -65,6 +66,7 @@ def parse_torrent_file(file_path: str) -> TorrentClass:
     if announce and announce not in trackers:
         trackers.insert(0, announce)
     
+    # Returns the parsed torrent
     return TorrentClass(name, info_hash, size, announce, trackers)
 
 
@@ -85,14 +87,14 @@ def parse_magnet_link(magnet_url: str) -> TorrentClass:
         raise ValueError("Invalid magnet link")
     
     # Parse query parameters
-    parsed = urllib.parse.urlparse(magnet_url)
-    params = urllib.parse.parse_qs(parsed.query)
+    parsed = urllib.parse.urlparse(magnet_url) # Parses the magnet link
+    params = urllib.parse.parse_qs(parsed.query) # Parses the query parameters
     
     # Extract info hash (xt parameter)
     if 'xt' not in params:
         raise ValueError("Magnet link missing xt parameter")
     
-    xt = params['xt'][0]
+    xt = params['xt'][0] # Extracts the info hash
     if not xt.startswith('urn:btih:'):
         raise ValueError("Invalid xt parameter")
     
@@ -119,4 +121,4 @@ def parse_magnet_link(magnet_url: str) -> TorrentClass:
     # Size is unknown for magnet links
     size = 0
     
-    return TorrentClass(name, info_hash, size, announce, trackers)
+    return TorrentClass(name, info_hash, size, announce, trackers) # Returns the parsed torrent

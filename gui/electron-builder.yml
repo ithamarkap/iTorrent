@@ -1,0 +1,18 @@
+appId: "com.itorrent.app"
+productName: "iTorrent"
+directories:
+  output: "dist"
+  buildResources: "resources"
+files:
+  - "**/*"
+  - "!**/*.py"
+  - "!**/venv/**"
+  - "!**/__pycache__/**"
+extraResources:
+  - from: "resources/api"
+    to: "api"
+    filter: ["**/*"]
+win:
+  target: "portable"
+  icon: "icon.ico" 
+  # Note: icon.ico is not present, build might warn or use default.

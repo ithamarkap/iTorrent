@@ -10,21 +10,40 @@ const FLASK_PORT = 5000;
 const FLASK_URL = `http://127.0.0.1:${FLASK_PORT}`;
 
 function startFlask() {
-    const scriptPath = path.join(__dirname, '../app.py');
-    let pythonPath = 'python3'; // Default fallback
+    let scriptPath;
+    let pythonPath;
+    let args;
 
-    // Check for venv
-    const venvPython = path.join(__dirname, '../venv/bin/python');
-    const fs = require('fs');
-    if (fs.existsSync(venvPython)) {
-        pythonPath = venvPython;
+    if (app.isPackaged) {
+        // In production, use the bundled executable
+        // api.exe is placed in resources/api/dist/api/api.exe or similar depending on pyinstaller
+        // Based on build_windows.bat: distpath gui/resources -> gui/resources/api.exe
+        // Electron builder extraResources: resources/api -> api
+        // So final path: contents/resources/api/api.exe
+        scriptPath = path.join(process.resourcesPath, 'api', 'api.exe');
+        console.log(`Starting Packaged Flask from: ${scriptPath}`);
+
+        flaskProcess = spawn(scriptPath, [], {
+            stdio: 'inherit'
+        });
+    } else {
+        // In development, run python script
+        scriptPath = path.join(__dirname, '../app.py');
+        pythonPath = 'python3'; // Default fallback
+
+        // Check for venv
+        const venvPython = path.join(__dirname, '../venv/bin/python');
+        const fs = require('fs');
+        if (fs.existsSync(venvPython)) {
+            pythonPath = venvPython;
+        }
+
+        console.log(`Starting Flask from: ${scriptPath} using ${pythonPath}`);
+
+        flaskProcess = spawn(pythonPath, [scriptPath], {
+            stdio: 'inherit'
+        });
     }
-
-    console.log(`Starting Flask from: ${scriptPath} using ${pythonPath}`);
-
-    flaskProcess = spawn(pythonPath, [scriptPath], {
-        stdio: 'inherit'
-    });
 
     flaskProcess.on('error', (err) => {
         console.error('Failed to start Flask process:', err);

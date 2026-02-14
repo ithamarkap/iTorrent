@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "main": "electron/main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build": "electron-builder"
   },
   "dependencies": {},
   "devDependencies": {
-    "electron": "^40.2.1"
+    "electron": "^40.2.1",
+    "electron-builder": "^25.1.8"
   }
 }

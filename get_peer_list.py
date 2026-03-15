@@ -93,7 +93,7 @@ class TrackerClass:
         event = 0  # 0: none; 1: completed; 2: started; 3: stopped
         ip_address = 0  # Default
         key = random.randint(0, 2**32 - 1)
-        num_want = -1  # Default
+        num_want = 50  # Request explicitly 50 peers instead of -1
         port = 6881  # Default BitTorrent port
         
         msg = struct.pack('!QII20s20sQQQIIIiH',

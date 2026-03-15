@@ -25,11 +25,11 @@ def parse_tracker_url(tracker_url):
     return (ip, port)
 
 def main():
-    # 1. Parse a known active torrent file
+    # Parse a known active torrent file
     logger.info("Parsing Torrent File...")
     torrent = parse_torrent_file("ubuntu-24.04.4-desktop-amd64.iso.torrent")
     
-    # 1.5. Add extra public trackers
+    # Add extra public trackers
     extra_trackers = [
         "udp://tracker.opentrackr.org:1337",
         "udp://tracker.openbittorrent.com:6969",
@@ -46,7 +46,7 @@ def main():
     
     peer_list = []
     
-    # 2. Iterate through trackers to get peers
+    # Iterate through trackers to get peers
     for tracker_url in torrent.trackers:
         if not tracker_url.startswith('udp:'):
             continue
@@ -72,7 +72,7 @@ def main():
         
     logger.info(f"Obtained {len(peer_list)} peers total. Will try to connect to one.")
     
-    # 5. Take peers and try to connect and handshake
+    # Take peers and try to connect and handshake
     # We shuffle just to ensure we don't always try the same dead node first
     random.shuffle(peer_list)
     

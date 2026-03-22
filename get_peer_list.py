@@ -1,4 +1,4 @@
-from torrent_parser import TorrentClass
+from torrent_client import TorrentClass
 import binascii
 import random
 import socket

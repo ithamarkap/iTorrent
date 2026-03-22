@@ -73,7 +73,7 @@ def get_peers():
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sys.path.insert(0, parent_dir)
     
-    from torrent_parser import parse_torrent_file, parse_magnet_link
+    from torrent_client import parse_torrent_file, parse_magnet_link
     from get_peer_list import TrackerClass
     
     # Setup logger

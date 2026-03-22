@@ -4,7 +4,7 @@ import urllib.parse
 import os
 import random
 
-from torrent_parser import parse_torrent_file
+from torrent_client import parse_torrent_file
 from get_peer_list import TrackerClass
 from peer_manager import Peer
 

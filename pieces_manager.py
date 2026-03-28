@@ -28,7 +28,7 @@ class Pieces:
         self.piece_amount = piece_amount
         self.total_size = total_size
 
-        self.blocks_amount = 0
+        self.blocks_amount = 0 # Dividing the pieces into blocks of 16KB.
         self.requested = list()
         self.received = list()
 

@@ -6,7 +6,7 @@ import struct
 
 
 class TrackerClass:
-    def __init__(self, tracker_ip: tuple, sock: socket, torrent_instance: TorrentClass, peer_id: bytes,logger):
+    def __init__(self, tracker_ip: tuple, sock: socket, torrent_instance: TorrentClass, peer_id: bytes, logger=None):
         self.sock = sock  # Socket for communication
         self.sock.settimeout(5) # Timeout for the socket
         self.tracker_ip = tracker_ip  # The tracker IP
@@ -14,7 +14,11 @@ class TrackerClass:
         self.connection_id = 0  # Connection id, will not be a 0 after a successful connection.
         self.peer_id = peer_id  # Random 20 bytes for the id
         self.peer_list = []
-        self.logger = logger
+        if logger is None:
+            import logging
+            self.logger = logging.getLogger('TrackerClass')
+        else:
+            self.logger = logger
 
     def start_communicating(self):
         try:

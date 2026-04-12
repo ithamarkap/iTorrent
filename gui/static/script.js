@@ -93,7 +93,25 @@ document.addEventListener('DOMContentLoaded', function () {
         fileInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 const file = e.target.files[0];
-                addTorrent(file.name);
+                let path = file.path || file.name;
+                if (window.electronAPI && window.electronAPI.getFilePath) {
+                    path = window.electronAPI.getFilePath(file);
+                }
+                addTorrent(path);
+                e.target.value = ''; // clear input
+            }
+        });
+    }
+
+    // Handle magnet link addition
+    const addMagnetBtn = document.getElementById('add-magnet-btn');
+    const magnetLinkInput = document.getElementById('magnet-link');
+    if (addMagnetBtn && magnetLinkInput) {
+        addMagnetBtn.addEventListener('click', () => {
+            const magnetUrl = magnetLinkInput.value.trim();
+            if (magnetUrl) {
+                addTorrent(magnetUrl);
+                magnetLinkInput.value = ''; // clear input
             }
         });
     }
@@ -176,6 +194,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 peerStatus.textContent = `Selected: ${file.name}`;
                 peerStatus.style.color = 'var(--success-color)';
+                e.target.value = ''; // clear input so identical files can be selected again
             }
         });
     }

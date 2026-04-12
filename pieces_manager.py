@@ -68,6 +68,12 @@ class Pieces:
         self.requested = self.received  # This means we have requested everything but we still haven't received everything maybe due to dropped connections.
         return not self.requested[piece_block['piece_index']][piece_block['begin'] // BLOCK_SIZE]
 
+    def get_progress(self):
+        if self.blocks_amount == 0:
+            return 0
+        received_blocks = sum(sum(1 for block in piece if block) for piece in self.received)
+        return (received_blocks / self.blocks_amount) * 100
+
     def is_done(self):
         for piece_index in self.received:
             for block in piece_index:

@@ -11,11 +11,16 @@ else:
     app = Flask(__name__)
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0 # Disable caching for dev
 
-# Mock data
-torrents = [
-    {'id': 1, 'name': 'mytotallylegallinuxiso.iso', 'status': 'Downloading', 'progress': 45, 'downloadSpeed': '2.5 MB/s', 'uploadSpeed': '100 KB/s'},
-    {'id': 2, 'name': 'totallylegitadobesoftware.zip', 'status': 'Seeding', 'progress': 100, 'downloadSpeed': '0 B/s', 'uploadSpeed': '500 KB/s'},
-]
+# Torrent instances
+import sys
+import os
+
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+from torrent_client import TorrentClient
+
+active_torrents = []
 
 @app.route('/')
 def index():
@@ -23,23 +28,25 @@ def index():
 
 @app.route('/api/torrents', methods=['GET'])
 def get_torrents():
-    return jsonify(torrents)
+    return jsonify([t.get_gui_data() for t in active_torrents])
 
 @app.route('/api/torrents/add', methods=['POST'])
 def add_torrent():
     data = request.json
     path = data.get('path')
     if path:
-        new_torrent = {
-            'id': len(torrents) + 1,
-            'name': os.path.basename(path),
-            'status': 'Downloading',
-            'progress': 0,
-            'downloadSpeed': '0 B/s',
-            'uploadSpeed': '0 B/s'
-        }
-        torrents.append(new_torrent)
-        return jsonify({'success': True, 'torrent': new_torrent})
+        if str(path).startswith('magnet:'):
+            client = TorrentClient(magnet_url=path)
+        else:
+            client = TorrentClient(torrent_path=path)
+            
+        if client.Error:
+            return jsonify({'success': False, 'error': 'Failed to initialize torrent'}), 400
+            
+        client.start()
+        active_torrents.append(client)
+        return jsonify({'success': True, 'torrent': client.get_gui_data()})
+        
     return jsonify({'success': False, 'error': 'No path provided'}), 400
 
 @app.route('/api/torrents/<int:torrent_id>/action', methods=['POST'])
@@ -47,16 +54,22 @@ def torrent_action(torrent_id):
     data = request.json
     action = data.get('action')
     
-    for t in torrents:
-        if t['id'] == torrent_id:
+    for client in active_torrents:
+        if id(client) == torrent_id:
             if action == 'start':
-                t['status'] = 'Downloading'
+                client.is_downloading = True
+                if hasattr(client, 'thread') and client.thread and client.thread.is_alive():
+                    client.status = 'Downloading'
+                else:
+                    client.start()
             elif action == 'pause':
-                t['status'] = 'Paused'
+                client.is_downloading = False
+                client.status = 'Paused'
             elif action == 'remove':
-                torrents.remove(t)
+                client.is_downloading = False
+                active_torrents.remove(client)
                 return jsonify({'success': True, 'removed': True})
-            return jsonify({'success': True, 'torrent': t})
+            return jsonify({'success': True, 'torrent': client.get_gui_data()})
             
     return jsonify({'success': False, 'error': 'Torrent not found'}), 404
 

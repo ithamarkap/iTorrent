@@ -29,10 +29,11 @@ function startFlask() {
     } else {
         // In development, run python script
         scriptPath = path.join(__dirname, '../app.py');
-        pythonPath = 'python3'; // Default fallback
+        pythonPath = process.platform === 'win32' ? 'python' : 'python3'; // Default fallback
 
         // Check for venv
-        const venvPython = path.join(__dirname, '../venv/bin/python');
+        const venvPythonPath = process.platform === 'win32' ? '../venv/Scripts/python.exe' : '../venv/bin/python';
+        const venvPython = path.join(__dirname, venvPythonPath);
         const fs = require('fs');
         if (fs.existsSync(venvPython)) {
             pythonPath = venvPython;

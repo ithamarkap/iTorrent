@@ -35,23 +35,14 @@ def is_handshake(data: bytes) -> bool:
 
 def pack_keep_alive() -> bytes:
     """Keep-alive message is just 4 zero bytes."""
-    return b'\x00\x00\x00\x00'
-
-# Placeholders for future client development
-def recv_by_length(sock):
-    pass
-
-def handle_response(sock, response_data, torrent_pieces, peer, torrent_download_files):
-    pass
-
-def request_piece_block(sock, torrent_pieces, peer):
-    pass
+from peer_handling import recv_by_length, handle_response, request_piece_block
 
 class Peer:
     def __init__(self, peer, info_hash, peer_id, pieces=None, piece_size=0, piece_amount=0, total_size=0, download_files=None):
         self.peer = peer  # Tuples of (ip, port)
         self.sock = None
         self.queue = list()
+        self.pending_requests = 0
         self.choked = True
         self.torrent_pieces = pieces
         self.piece_size = piece_size
@@ -98,6 +89,24 @@ class Peer:
             if is_handshake(response_data):
                 # We can also check if the peer returned the same info_hash here
                 logger.info(f"SUCCESS: Valid BitTorrent handshake received from {self.peer}!")
+                
+                # Unchoke the peer and send bitfield
+                try:
+                    from peer_handling import pack_message, MessageID, pack_bitfield
+                    self.sock.send(pack_message(MessageID.UNCHOKE))
+                    
+                    if self.torrent_pieces and self.torrent_pieces.piece_amount > 0:
+                        bitfield = bytearray((self.torrent_pieces.piece_amount + 7) // 8)
+                        has_any = False
+                        for i in range(self.torrent_pieces.piece_amount):
+                            if all(self.torrent_pieces.received[i]):
+                                bitfield[i // 8] |= (1 << (7 - (i % 8)))
+                                has_any = True
+                        if has_any:
+                            self.sock.send(pack_bitfield(bytes(bitfield)))
+                except Exception as e:
+                    logger.error(f"Error sending unchoke/bitfield: {e}")
+                    
                 return True
             else:
                 logger.error("Received data is not a valid BitTorrent handshake.")
@@ -123,22 +132,14 @@ class Peer:
 
     def communicate(self):
         try:
-            logger.debug("Communicating")
+            # We don't want to log every single tick
             response_data = recv_by_length(self.sock)
             if response_data:
                 self.is_not_listening = False
-                logger.debug("Hi There Response!")
                 handle_response(self.sock, response_data, self.torrent_pieces, self, self.torrent_download_files)
-                logger.debug("Hello There Response!")
             else:
-                if self.is_not_listening:  # Meaning didn't respond twice in a row.
-                    self.sock.shutdown(socket.SHUT_RDWR)
-                    return False
                 self.is_not_listening = True
-
-                logger.debug("Hi There!")
                 request_piece_block(self.sock, self.torrent_pieces, self)
-                logger.debug("Hello There!")
             return True
 
         except Exception as e:

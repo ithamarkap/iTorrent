@@ -12,7 +12,7 @@ from pathlib import Path
 class TorrentClass:
     # Represents a parsed torrent with all necessary metadata.
     
-    def __init__(self, name: str, info_hash: bytes, size: int, announce: str, trackers: list = None, piece_length: int = 0, pieces: bytes = b''):
+    def __init__(self, name: str, info_hash: bytes, size: int, announce: str, trackers: list = None, piece_length: int = 0, pieces: bytes = b'', files: list = None):
         self.name = name
         self.info_hash = info_hash
         self.size = size
@@ -20,6 +20,7 @@ class TorrentClass:
         self.trackers = trackers if trackers else [announce] if announce else []
         self.piece_length = piece_length
         self.pieces = pieces
+        self.files = files if files is not None else []
         # Pieces is a concatenation of 20-byte SHA1 hashes
         self.piece_amount = len(pieces) // 20 if pieces else 0
 
@@ -37,8 +38,13 @@ def parse_torrent_file(file_path: str) -> TorrentClass:
     
     if b'length' in info:
         size = info[b'length']
+        files = [{'name': name, 'length': size}]
     else:
         size = sum(f[b'length'] for f in info[b'files'])
+        files = []
+        for f in info[b'files']:
+            path = [p.decode('utf-8') for p in f[b'path']]
+            files.append({'path': path, 'length': f[b'length']})
     
     announce = data.get(b'announce', b'').decode('utf-8')
     
@@ -54,7 +60,7 @@ def parse_torrent_file(file_path: str) -> TorrentClass:
     piece_length = info.get(b'piece length', 0)
     pieces = info.get(b'pieces', b'')
     
-    return TorrentClass(name, info_hash, size, announce, trackers, piece_length, pieces)
+    return TorrentClass(name, info_hash, size, announce, trackers, piece_length, pieces, files)
 
 
 def parse_magnet_link(magnet_url: str) -> TorrentClass:
@@ -130,8 +136,8 @@ class TorrentClient:
             self.Error = True
             return
 
-        self.relative_directory = str(Path.home() / "Downloads")
-        self.files = None
+        self.relative_directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Downloads")
+        self.files = getattr(self.parsed_torrent, 'files', []) if hasattr(self, 'parsed_torrent') else []
         self.download_files = None
         
         # We will use our new PieceManager wrapper that encompasses the Pieces object
@@ -140,6 +146,8 @@ class TorrentClient:
         
         if self.piece_amount > 0 and not self.setup_pieces():
             self.Error = True
+            
+        self.setup_download_files()
         
         self.peer_list = list()
         self.connected_peers = list()
@@ -148,6 +156,10 @@ class TorrentClient:
 
         self.statuses = list()
         self.is_downloading = False
+        
+        self.download_speed = 0
+        self.upload_speed = 0
+        self.status = 'Paused'
         
         self.user_info = {
             'Name': self.name,
@@ -159,6 +171,82 @@ class TorrentClient:
             'Hash': self.info_hash.hex(),
             'Pieces': f"{self.piece_amount} x {self.piece_size} bytes"
         }
+
+    def get_gui_data(self):
+        progress = self.pieces.get_progress() if self.pieces else 0
+        return {
+            'id': id(self),
+            'name': self.name,
+            'status': self.status,
+            'progress': round(progress, 2),
+            'downloadSpeed': f"{self.download_speed / 1024:.2f} KB/s",
+            'uploadSpeed': f"{self.upload_speed / 1024:.2f} KB/s"
+        }
+
+    def start(self):
+        if self.Error: return
+        self.is_downloading = True
+        self.status = 'Downloading'
+        import threading
+        self.thread = threading.Thread(target=self._download_loop, daemon=True)
+        self.thread.start()
+
+    def _download_loop(self):
+        import time
+        last_time = time.time()
+        last_downloaded = 0
+        
+        while self.is_downloading:
+            if self.pieces and self.pieces.is_done():
+                self.status = 'Seeding'
+                self.download_speed = 0
+                self.is_downloading = False
+                break
+                
+            if not self.pieces:
+                self.status = 'Fetching Metadata'
+                
+            if not self.peer_list:
+                self.get_peer_list()
+                
+            if len(self.connected_peers) < self.MAX_PEER_CONNECTIONS:
+                self.connect_peers()
+                
+            self.communicate_peers()
+            
+            current_time = time.time()
+            elapsed = current_time - last_time
+            if elapsed >= 1.0:
+                if self.pieces:
+                    current_downloaded = sum(sum(1 for b in p if b) for p in self.pieces.received) * 16384
+                    self.download_speed = (current_downloaded - last_downloaded) / elapsed
+                    last_downloaded = current_downloaded
+                    
+                    if not hasattr(self, 'verified_pieces'):
+                        self.verified_pieces = set()
+                        
+                    for i in range(self.pieces.piece_amount):
+                        if i not in self.verified_pieces:
+                            if all(self.pieces.received[i]):
+                                if self.download_files.check_piece_hash(i):
+                                    print(f"Piece {i} verified! Broadcasting HAVE.")
+                                    self.verified_pieces.add(i)
+                                    from peer_handling import pack_have
+                                    have_msg = pack_have(i)
+                                    for p in self.connected_peers:
+                                        try:
+                                            if p.sock:
+                                                p.sock.send(have_msg)
+                                        except Exception:
+                                            pass
+                                else:
+                                    print(f"Piece {i} failed hash check! Resetting.")
+                                    for block_idx in range(len(self.pieces.received[i])):
+                                        self.pieces.received[i][block_idx] = False
+                                        self.pieces.requested[i][block_idx] = False
+                last_time = current_time
+                
+            time.sleep(0.01)
 
     def setup_pieces(self):
         from pieces_manager import Pieces, PieceManager
@@ -211,12 +299,15 @@ class TorrentClient:
 
     def connect_peers(self):
         from peer_manager import Peer
-        print("Connecting to peers...")
+        import threading
+        print("Connecting to peers concurrently...")
 
         if not self.peer_list:
             return True
             
-        for peer_addr in self.peer_list[:]:
+        def try_connect(peer_addr):
+            if len(self.connected_peers) >= self.MAX_PEER_CONNECTIONS:
+                return
             try:
                 peer_obj = Peer(peer_addr, self.info_hash, self.peer_id, 
                                 pieces=self.pieces, 
@@ -225,20 +316,30 @@ class TorrentClient:
                                 total_size=self.total_size, 
                                 download_files=self.download_files)
 
-                if len(self.connected_peers) < self.MAX_PEER_CONNECTIONS:
-                    if peer_obj.connect():
+                if peer_obj.connect():
+                    if len(self.connected_peers) < self.MAX_PEER_CONNECTIONS:
                         self.connected_peers.append(peer_obj)
                         if self.piece_manager:
                             self.piece_manager.add_seeder(peer_obj.peer)
-                    else:
-                        self.peer_list.remove(peer_obj.peer)
                 else:
-                    print(f"Connected {len(self.connected_peers)}")
-                    break
+                    if peer_obj.peer in self.peer_list:
+                        self.peer_list.remove(peer_obj.peer)
             except Exception as e:
                 print(f"Failed to initialize/connect peer {peer_addr}: {e}")
 
-        print("Done connecting!", [peer.peer for peer in self.connected_peers])
+        threads = []
+        for peer_addr in self.peer_list[:min(20, len(self.peer_list))]:
+            if len(self.connected_peers) >= self.MAX_PEER_CONNECTIONS:
+                break
+            t = threading.Thread(target=try_connect, args=(peer_addr,))
+            t.daemon = True
+            t.start()
+            threads.append(t)
+            
+        for t in threads:
+            t.join()
+
+        print("Done connecting!", [(p.peer[0], p.peer[1]) for p in self.connected_peers])
 
     def communicate_peers(self):
         self.communication_peers_per_loop = self.connected_peers.copy()
@@ -286,8 +387,12 @@ class TorrentClient:
                 
             path = os.path.join(self.relative_directory, directory_name)
             
-            # self.download_files = Files(self.piece_size, self.pieces_hash, self.files, path)
-            print("Files setup placeholder passed. Ensure files_manager.py is included later.")
+            from files_manager import Files
+            self.download_files = Files(self.piece_size, self.pieces_hash, self.files, path)
+            self.download_files.create_directory()
+            self.download_files.create_files()
+            
+            print("Files setup complete.")
             return False
 
         except Exception as e:

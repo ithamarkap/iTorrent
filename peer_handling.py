@@ -44,11 +44,6 @@ def handle_response(sock, msg, pieces, peer, download_files):
     if not msg:
         return None
 
-    # Check if the message is a handshake
-    if is_handshake(msg):
-        logger.debug("Received Handshake")
-        return "Handshake"
-
     # Keep-alive messages have a length of 4 bytes (just the length prefix of 0)
     if len(msg) == ProtocolConstant.KEEP_ALIVE_LENGTH:
         logger.debug("Received Keep-alive")
@@ -80,6 +75,8 @@ def handle_response(sock, msg, pieces, peer, download_files):
             handle_bitfield(sock, payload, pieces, peer)
         elif msg_id == MessageID.PIECE:
             handle_piece(sock, payload, pieces, peer, download_files)
+        elif msg_id == MessageID.REQUEST:
+            handle_request(sock, payload, pieces, peer, download_files)
     else:
         # Invalid or unrecognized message
         sock.shutdown(socket.SHUT_RDWR)
@@ -96,9 +93,34 @@ def handle_have(sock, payload, pieces, peer):
     queue_was_empty = peer.empty()
     peer.add_piece_blocks(piece_index)
     logger.debug(f"Peer has piece: {piece_index}")
-
     if queue_was_empty:
         request_piece_block(sock, pieces, peer)
+
+def handle_request(sock, payload, pieces, peer, download_files):
+    """
+    Peer is requesting a block of data from us. (We are uploading/seeding).
+    We should read the requested block from our file manager and send it back as a PIECE message.
+    """
+    if not download_files or not pieces:
+        return
+        
+    index, begin, length = struct.unpack('!III', payload[:12])
+    
+    # Ensure we actually have the piece downloaded
+    try:
+        block_idx = begin // 16384
+        if not pieces.received[index][block_idx]:
+            return # Ignore request if we don't have the data yet
+    except IndexError:
+        pass
+        
+    global_offset = index * download_files.piece_size + begin
+    data = download_files._read(global_offset, length)
+    
+    if data and len(data) == length:
+        logger.debug(f"Uploading PIECE {index} block at offset {begin} (len: {length}) to {peer.peer}")
+        msg = pack_piece(index, begin, data)
+        sock.send(msg)
 
 
 def handle_bitfield(sock, payload, pieces, peer):
@@ -139,6 +161,10 @@ def handle_piece(sock, payload, pieces, peer, download_files):
     # Mark as received in our pieces manager
     pieces.add_received({'piece_index': piece_index, 'begin': begin})
     
+    peer.pending_requests -= 1
+    if peer.pending_requests < 0:
+        peer.pending_requests = 0
+        
     # Keep requesting blocks since we are unchoked and receiving data
     request_piece_block(sock, pieces, peer)
 
@@ -152,18 +178,24 @@ def request_piece_block(sock, pieces, peer):
         sock.send(pack_message(MessageID.INTERESTED))
         return
 
-    if peer.empty():
+    if peer.empty() and peer.pending_requests == 0:
         sock.send(pack_message(MessageID.INTERESTED))
         return
 
-    while not peer.empty():
+    requests_sent = 0
+    while not peer.empty() and peer.pending_requests < 10 and requests_sent < 10:
         piece_block = peer.pop()
         if pieces.needed(piece_block):
             # Send a request for this specific pending block
             req_msg = pack_request(piece_block['piece_index'], piece_block['begin'], piece_block['length'])
-            sock.send(req_msg)
-            pieces.add_request(piece_block)
-            break
+            try:
+                sock.send(req_msg)
+                pieces.add_request(piece_block)
+                peer.pending_requests += 1
+                requests_sent += 1
+            except Exception:
+                peer.queue.insert(0, piece_block)
+                break
 
 
 # Network Utilities

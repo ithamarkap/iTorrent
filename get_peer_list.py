@@ -93,7 +93,13 @@ class TrackerClass:
         """Create UDP tracker announce request message."""
         action = 1  # Announce action
         transaction_id = random.randint(0, 2**32 - 1)
-        left = max(0, torrent_size - downloaded)
+        # Ensure values are strictly integers for struct.pack
+        safe_downloaded = int(downloaded) if downloaded else 0
+        safe_uploaded = int(uploaded) if uploaded else 0
+        safe_event = int(event) if event else 0
+        safe_torrent_size = int(torrent_size) if torrent_size else 0
+        
+        left = max(0, safe_torrent_size - safe_downloaded)
         
         ip_address = 0  # Default
         key = random.randint(0, 2**32 - 1)
@@ -103,8 +109,8 @@ class TrackerClass:
         msg = struct.pack('!QII20s20sQQQIIIiH',
                          connection_id, action, transaction_id,
                          info_hash, peer_id,
-                         downloaded, left, uploaded,
-                         event, ip_address, key, num_want, port)
+                         safe_downloaded, left, safe_uploaded,
+                         safe_event, ip_address, key, num_want, port)
         return msg, transaction_id
 
     def decode_announce_msg(self, msg):

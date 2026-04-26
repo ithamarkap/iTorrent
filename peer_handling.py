@@ -26,6 +26,7 @@ class MessageID(enum.IntEnum):
     PIECE = 7
     CANCEL = 8
     PORT = 9
+    EXTENDED = 20
 
 class ProtocolConstant(enum.IntEnum):
     HANDSHAKE_LENGTH = 68
@@ -77,6 +78,8 @@ def handle_response(sock, msg, pieces, peer, download_files):
             handle_piece(sock, payload, pieces, peer, download_files)
         elif msg_id == MessageID.REQUEST:
             handle_request(sock, payload, pieces, peer, download_files)
+        elif msg_id == MessageID.EXTENDED:
+            handle_extended(sock, payload, peer)
     else:
         # Invalid or unrecognized message
         sock.shutdown(socket.SHUT_RDWR)
@@ -177,7 +180,11 @@ def request_piece_block(sock, pieces, peer):
     """
     Requests the next needed piece block from the peer.
     If we are choked, we just let the peer know we are interested.
+    pieces may be None during magnet metadata fetching - in that case, do nothing.
     """
+    if pieces is None:
+        return  # Still fetching metadata via extension protocol, no pieces yet
+    
     if peer.choked:
         sock.send(pack_message(MessageID.INTERESTED))
         return
@@ -189,7 +196,7 @@ def request_piece_block(sock, pieces, peer):
     requests_sent = 0
     while not peer.empty() and peer.pending_requests < 50 and requests_sent < 50:
         piece_block = peer.pop()
-        if pieces.needed(piece_block):
+        if pieces and pieces.needed(piece_block):
             # Send a request for this specific pending block
             req_msg = pack_request(piece_block['piece_index'], piece_block['begin'], piece_block['length'])
             try:
@@ -316,3 +323,185 @@ def pack_piece(index, begin, block):
     length = len(block) + 9
     pack_format = '!IBII'
     return struct.pack(pack_format, length, MessageID.PIECE, index, begin, block)
+
+def send_extended_handshake(sock):
+    """
+    Sends the local extended handshake indicating we want to exchange metadata.
+    Format: <length><20><0><bencoded dictionary>
+    """
+    try:
+        import bencodepy
+        handshake_dict = {b'm': {b'ut_metadata': 1}}
+        payload = bencodepy.encode(handshake_dict)
+        msg_length = 2 + len(payload)
+        pack_format = f'!IBB{len(payload)}s'
+        msg = struct.pack(pack_format, msg_length, MessageID.EXTENDED, 0, payload)
+        sock.send(msg)
+        logger.debug("Sent Extended Handshake successfully.")
+    except Exception as e:
+        logger.error(f"Failed to send extended handshake: {e}")
+
+def request_metadata_piece(sock, ut_metadata_id, piece_index):
+    try:
+        import bencodepy
+        request_dict = {b'msg_type': 0, b'piece': piece_index}
+        payload = bencodepy.encode(request_dict)
+        msg_length = 2 + len(payload)
+        pack_format = f'!IBB{len(payload)}s'
+        msg = struct.pack(pack_format, msg_length, MessageID.EXTENDED, ut_metadata_id, payload)
+        sock.send(msg)
+        logger.debug(f"Requested metadata piece {piece_index}.")
+    except Exception as e:
+        logger.error(f"Failed to request metadata piece: {e}")
+        
+def extract_dict_and_trailing(data_bytes):
+    stack = 0
+    i = 0
+    while i < len(data_bytes):
+        c = data_bytes[i:i+1]
+        if c == b'd' or c == b'l':
+            stack += 1
+            i += 1
+        elif c == b'i':
+            i += 1
+            while i < len(data_bytes) and data_bytes[i:i+1] != b'e':
+                i += 1
+            i += 1
+        elif b'0' <= c <= b'9':
+            num = b''
+            while i < len(data_bytes) and b'0' <= data_bytes[i:i+1] <= b'9':
+                num += data_bytes[i:i+1]
+                i += 1
+            if i < len(data_bytes) and data_bytes[i:i+1] == b':':
+                str_len = int(num)
+                i += 1 + str_len
+        elif c == b'e':
+            stack -= 1
+            i += 1
+            if stack == 0:
+                return data_bytes[:i], data_bytes[i:]
+        else:
+            i += 1
+    return data_bytes, b''
+
+def handle_extended(sock, payload, peer):
+    """
+    Handles incoming extended messages.
+    """
+    if len(payload) < 2:
+        return
+    
+    import bencodepy
+    extended_msg_id = payload[0]
+    bencoded_data_bytes = payload[1:]
+    
+    if extended_msg_id == 0:  # Extended Handshake
+        try:
+            dict_bytes, _ = extract_dict_and_trailing(bencoded_data_bytes)
+            decoded = bencodepy.decode(dict_bytes)
+            if b'm' in decoded and b'ut_metadata' in decoded[b'm']:
+                peer.ut_metadata_id = decoded[b'm'][b'ut_metadata']
+                peer.metadata_size = decoded.get(b'metadata_size', 0)
+                print(f"METADATA: Received info from {peer.peer}. Size: {peer.metadata_size}, ut_id: {peer.ut_metadata_id}")
+                
+                has_client = peer.client is not None
+                if peer.client and not peer.client.pieces and peer.metadata_size > 0:
+                    total_pieces = (peer.metadata_size + 16383) // 16384
+                    peer.client.status = "Fetching Metadata"
+                    if not hasattr(peer.client, 'metadata_buffer'):
+                        peer.client.metadata_buffer = {}
+                    if not hasattr(peer.client, 'metadata_requests'):
+                        peer.client.metadata_requests = set()
+                    
+                    print(f"METADATA: Starting sync fetch. Total pieces: {total_pieces}, Buffer: {len(peer.client.metadata_buffer)}")
+                    import time as _time
+                    for piece_idx in range(total_pieces):
+                        if piece_idx in peer.client.metadata_buffer:
+                            continue
+                        try:
+                            peer.client.metadata_requests.add(piece_idx)
+                            print(f"METADATA: Requesting piece {piece_idx} from {peer.peer}")
+                            request_metadata_piece(sock, peer.ut_metadata_id, piece_idx)
+                            
+                            # Blocking read - wait up to 10s for the reply
+                            deadline = _time.time() + 10
+                            while _time.time() < deadline:
+                                raw = recv_by_length(sock)
+                                if raw is False or raw is None:
+                                    break
+                                    
+                                msg_id_byte = raw[4] if len(raw) > 4 else -1
+                                if msg_id_byte == 20:  # EXTENDED message
+                                    inner_payload = raw[5:]
+                                    if len(inner_payload) < 2:
+                                        continue
+                                    inner_id = inner_payload[0]
+                                    # The peer sends response using OUR declared ut_metadata ID (1)
+                                    if inner_id == 1:
+                                        dict_bytes, metadata_piece = extract_dict_and_trailing(inner_payload[1:])
+                                        if dict_bytes:
+                                            inner_decoded = bencodepy.decode(dict_bytes)
+                                            if inner_decoded.get(b'msg_type') == 1:
+                                                p_idx = inner_decoded.get(b'piece', piece_idx)
+                                                peer.client.metadata_buffer[p_idx] = metadata_piece
+                                                print(f"METADATA: Received piece {p_idx} ({len(metadata_piece)} bytes)")
+                                                break
+                                            elif inner_decoded.get(b'msg_type') == 2:
+                                                print(f"METADATA: Piece {piece_idx} REJECTED by peer")
+                                                break
+                                    elif inner_id == 0:
+                                        # Another extended handshake, extract their metadata ID if updated
+                                        try:
+                                            hdict_b, _ = extract_dict_and_trailing(inner_payload[1:])
+                                            hd = bencodepy.decode(hdict_b)
+                                            if b'm' in hd and b'ut_metadata' in hd[b'm']:
+                                                peer.ut_metadata_id = hd[b'm'][b'ut_metadata']
+                                        except Exception:
+                                            pass
+                                # Ignore other message types while waiting
+                        except Exception as e:
+                            print(f"METADATA: Error fetching piece {piece_idx}: {e}")
+                            break
+                    
+                    # Check if we now have all pieces
+                    if len(peer.client.metadata_buffer) == total_pieces:
+                        if hasattr(peer.client, 'verify_and_install_metadata'):
+                            peer.client.verify_and_install_metadata(peer.metadata_size)
+        except Exception as e:
+            print(f"METADATA: Error parsing Extended Handshake: {e}")
+            
+    elif extended_msg_id == peer.ut_metadata_id:  # ut_metadata message
+        try:
+            dict_bytes, metadata_piece = extract_dict_and_trailing(bencoded_data_bytes)
+            if not dict_bytes:
+                return
+            decoded_dict = bencodepy.decode(dict_bytes)
+            
+            msg_type = decoded_dict.get(b'msg_type')
+            piece_index = decoded_dict.get(b'piece')
+            
+            if msg_type == 1 and piece_index is not None and peer.client:
+                print(f"METADATA: Received piece {piece_index} from {peer.peer}")
+                if not hasattr(peer.client, 'metadata_buffer'):
+                    peer.client.metadata_buffer = {}
+                peer.client.metadata_buffer[piece_index] = metadata_piece
+                
+                if hasattr(peer.client, 'metadata_requests') and piece_index in peer.client.metadata_requests:
+                    peer.client.metadata_requests.remove(piece_index)
+                    
+                total_pieces = (peer.metadata_size + 16383) // 16384
+                if len(peer.client.metadata_buffer) == total_pieces:
+                    # We have all pieces
+                    if hasattr(peer.client, 'verify_and_install_metadata'):
+                        peer.client.verify_and_install_metadata(peer.metadata_size)
+                        
+                # Continue requesting if there are more
+                if not peer.client.pieces:
+                    for i in range(total_pieces):
+                        if i not in peer.client.metadata_buffer and i not in getattr(peer.client, 'metadata_requests', set()):
+                            peer.client.metadata_requests.add(i)
+                            print(f"METADATA: Requesting NEXT piece {i} from {peer.peer}")
+                            request_metadata_piece(sock, peer.ut_metadata_id, i)
+                            break
+        except Exception as e:
+            print(f"METADATA: Error handling ut_metadata: {e}")

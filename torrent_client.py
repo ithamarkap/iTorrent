@@ -110,6 +110,11 @@ class TorrentClient:
         self.Error = False
 
         try:
+            import bencodepy
+        except ImportError:
+            print("ERROR: 'bencodepy' is not installed. Metadata fetching will fail. Run 'pip install bencodepy'")
+            
+        try:
             if self.torrent_path:
                 self.parsed_torrent = parse_torrent_file(self.torrent_path)
             elif self.magnet_url:
@@ -144,17 +149,100 @@ class TorrentClient:
         self.pieces = None
         self.piece_manager = None
         
+        self.peer_list = list()
+        self.connected_peers = list()
+        self.communication_peers_per_loop = list()
+        self.MAX_PEER_CONNECTIONS = 50
+
+        self.statuses = list()
+        self.is_downloading = False
+        
+        self.download_speed = 0
+        self.upload_speed = 0
+        self.status = 'Paused'
+        
+        self.user_info = {
+            'Name': self.name,
+            'Path': getattr(self, 'torrent_path', None) or getattr(self, 'magnet_url', None),
+            'Created On': getattr(self, 'creation_date', None),
+            "Created By": getattr(self, 'creator', None),
+            'Comment': getattr(self, 'comment', None),
+            'Total_Size': f"{self.total_size} bytes",
+            'Hash': getattr(self, 'info_hash', b'').hex(),
+            'Pieces': f"{self.piece_amount} x {self.piece_size} bytes"
+        }
+        
+        self.metadata_buffer = {}
+        
         if self.piece_amount > 0 and not self.setup_pieces():
             self.Error = True
             
         self.setup_download_files()
         self.verify_existing_files()
         
-        self.peer_list = list()
+    def verify_and_install_metadata(self, metadata_size):
+        if not hasattr(self, 'metadata_buffer'):
+            return
+            
+        metadata_bytes = b"".join([self.metadata_buffer[i] for i in sorted(self.metadata_buffer.keys())])
         
+        import hashlib
+        if hashlib.sha1(metadata_bytes).digest() != self.info_hash:
+            print("Metadata hash mismatch! Verification failed.")
+            return
+            
+        print("Metadata downloaded and verified successfully!")
+        
+        import bencodepy
+        try:
+            info = bencodepy.decode(metadata_bytes)
+            
+            name = info.get(b'name', b'').decode('utf-8')
+            if name and self.name == 'Unknown':
+                self.name = name
+                
+            if b'length' in info:
+                self.total_size = info[b'length']
+                self.files = [{'name': name, 'length': self.total_size}]
+            else:
+                self.total_size = sum(f[b'length'] for f in info.get(b'files', []))
+                self.files = []
+                for f in info.get(b'files', []):
+                    path = [p.decode('utf-8') for p in f.get(b'path', [])]
+                    self.files.append({'path': path, 'length': f.get(b'length', 0)})
+                    
+            self.piece_size = info.get(b'piece length', 0)
+            self.pieces_hash = info.get(b'pieces', b'')
+            self.piece_amount = len(self.pieces_hash) // 20
+            
+            # Setup torrent files and pieces natively
+            if self.piece_amount > 0 and not self.setup_pieces():
+                self.Error = True
+            
+            self.setup_download_files()
+            self.verify_existing_files()
+            
+            # Reconstruct the missing file array in user info
+            self.user_info['Pieces'] = f"{self.piece_amount} x {self.piece_size} bytes"
+            self.user_info['Total_Size'] = f"{self.total_size} bytes"
+            self.user_info['Name'] = self.name
+            
+            self.status = "Downloading"
+            
+            # Distribute updated piece logic into existing connected peers natively
+            for peer in self.connected_peers:
+                peer.piece_size = self.piece_size
+                peer.piece_amount = self.piece_amount
+                peer.total_size = self.total_size
+                peer.torrent_pieces = self.pieces
+                peer.torrent_download_files = self.download_files
+                
+        except Exception as e:
+            print(f"Failed to install metadata natively: {e}")
+            
     def verify_existing_files(self):
         print("Checking existing files data from disk...")
-        if not self.pieces or not self.download_files:
+        if not getattr(self, 'pieces', None) or not getattr(self, 'download_files', None):
             return
             
         verified_count = 0
@@ -174,27 +262,6 @@ class TorrentClient:
         print(f"Verified {verified_count}/{self.piece_amount} existing pieces natively.")
         if verified_count > 0 and verified_count == self.piece_amount:
             self.status = 'Seeding'
-        self.connected_peers = list()
-        self.communication_peers_per_loop = list()
-        self.MAX_PEER_CONNECTIONS = 50
-
-        self.statuses = list()
-        self.is_downloading = False
-        
-        self.download_speed = 0
-        self.upload_speed = 0
-        self.status = 'Paused'
-        
-        self.user_info = {
-            'Name': self.name,
-            'Path': self.torrent_path or self.magnet_url,
-            'Created On': self.creation_date,
-            "Created By": self.creator,
-            'Comment': self.comment,
-            'Total_Size': f"{self.total_size} bytes",
-            'Hash': self.info_hash.hex(),
-            'Pieces': f"{self.piece_amount} x {self.piece_size} bytes"
-        }
 
     def get_gui_data(self):
         progress = self.pieces.get_progress() if self.pieces else 0
@@ -339,7 +406,11 @@ class TorrentClient:
     def get_peer_list(self, event=0):
         from get_peer_list import TrackerClass
         """Iterates over the announce urls to obtain a list of peers."""
-        print(f"Contacting trackers for {self.name}...")
+        try:
+            safe_name = str(self.name).encode('ascii', 'replace').decode()
+            print(f"Contacting trackers for {safe_name}...")
+        except Exception:
+            print("Contacting tracker...")
         breaking = False
         
         current_downloaded = sum(sum(1 for b in p if b) for p in self.pieces.received) * 16384 if self.pieces else 0
@@ -393,11 +464,12 @@ class TorrentClient:
                 return
             try:
                 peer_obj = Peer(peer_addr, self.info_hash, self.peer_id, 
-                                pieces=self.pieces, 
-                                piece_size=self.piece_size, 
-                                piece_amount=self.piece_amount, 
-                                total_size=self.total_size, 
-                                download_files=self.download_files)
+                                pieces=getattr(self, 'pieces', None), 
+                                piece_size=getattr(self, 'piece_size', 0), 
+                                piece_amount=getattr(self, 'piece_amount', 0), 
+                                total_size=getattr(self, 'total_size', 0), 
+                                download_files=getattr(self, 'download_files', None),
+                                client=self)
 
                 if peer_obj.connect():
                     if len(self.connected_peers) < self.MAX_PEER_CONNECTIONS:
@@ -412,7 +484,7 @@ class TorrentClient:
 
         threads = []
         import threading
-        for peer_addr in peers_to_connect[:min(20, len(peers_to_connect))]:
+        for peer_addr in peers_to_connect[:min(10, len(peers_to_connect))]:
             if len(self.connected_peers) >= self.MAX_PEER_CONNECTIONS:
                 break
             t = threading.Thread(target=try_connect, args=(peer_addr,))

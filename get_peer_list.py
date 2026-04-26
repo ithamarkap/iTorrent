@@ -99,18 +99,20 @@ class TrackerClass:
         safe_event = int(event) if event else 0
         safe_torrent_size = int(torrent_size) if torrent_size else 0
         
-        left = max(0, safe_torrent_size - safe_downloaded)
+        # Use total_size if available (magnets), otherwise fallback to size (static torrents)
+        total_torrent_size = getattr(self.torrent_instance, 'total_size', getattr(self.torrent_instance, 'size', 0))
+        left = max(0, int(total_torrent_size) - int(downloaded))
         
         ip_address = 0  # Default
         key = random.randint(0, 2**32 - 1)
-        num_want = 50  # Request explicitly 50 peers instead of -1
+        num_want = 50
         port = self.listen_port
         
         msg = struct.pack('!QII20s20sQQQIIIiH',
                          connection_id, action, transaction_id,
                          info_hash, peer_id,
-                         safe_downloaded, left, safe_uploaded,
-                         safe_event, ip_address, key, num_want, port)
+                         int(downloaded), left, int(uploaded),
+                         int(event), ip_address, key, num_want, port)
         return msg, transaction_id
 
     def decode_announce_msg(self, msg):

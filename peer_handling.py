@@ -61,9 +61,17 @@ def handle_response(sock, msg, pieces, peer, download_files):
             peer.choked = False
             request_piece_block(sock, pieces, peer)
         elif msg_id in (MessageID.INTERESTED, MessageID.NOT_INTERESTED):
-            # Peer is updating its interest status
+            # Peer is updating its interest status in downloading FROM us
+            peer.peer_interested = (msg_id == MessageID.INTERESTED)
             logger.debug(f"Received {'Interested' if msg_id == MessageID.INTERESTED else 'Not Interested'}")
-            request_piece_block(sock, pieces, peer)
+            # If peer became interested and we are choking them, send unchoke to allow uploads
+            if peer.peer_interested and peer.am_choking:
+                try:
+                    sock.send(pack_message(MessageID.UNCHOKE))
+                    peer.am_choking = False
+                    logger.debug(f"Sent Unchoke to {peer.peer} because they are interested")
+                except Exception as e:
+                    logger.error(f"Failed to send unchoke: {e}")
 
     # Messages with a payload (length > 5 bytes)
     elif len(msg) > ProtocolConstant.KEEP_ALIVE_LENGTH + 1:
@@ -105,21 +113,32 @@ def handle_request(sock, payload, pieces, peer, download_files):
     if not download_files or not pieces:
         return
         
-    index, begin, length = struct.unpack('!III', payload[:12])
-    
-    # Ensure we actually have the piece downloaded
     try:
-        block_idx = begin // 16384
-        if not pieces.received[index][block_idx]:
-            return # Ignore request if we don't have the data yet
-    except IndexError:
-        pass
+        index, begin, length = struct.unpack('!III', payload[:12])
+    except Exception:
+        return
+    
+    # Ensure we actually have ALL blocks covered by this request
+    try:
+        if index < 0 or index >= len(pieces.received):
+            return
+        piece_size = pieces.determine_piece_size(index)
+        if begin < 0 or begin >= piece_size or length <= 0 or begin + length > piece_size:
+            return  # Invalid request range
+        
+        # Check every block in the requested range
+        start_block = begin // 16384
+        end_block = (begin + length - 1) // 16384
+        for block_idx in range(start_block, end_block + 1):
+            if block_idx >= len(pieces.received[index]) or not pieces.received[index][block_idx]:
+                return  # Don't have this block yet
+    except (IndexError, TypeError):
+        return
         
     global_offset = index * download_files.piece_size + begin
     data = download_files._read(global_offset, length)
     
     if data and len(data) == length:
-        logger.debug(f"Uploading PIECE {index} block at offset {begin} (len: {length}) to {peer.peer}")
         msg = pack_piece(index, begin, data)
         try:
             sock.send(msg)
@@ -335,7 +354,7 @@ def pack_piece(index, begin, block):
     Format: <length=9+block_len><id=7><index><begin offset><block data>
     """
     length = len(block) + 9
-    pack_format = '!IBII'
+    pack_format = f'!IBII{len(block)}s'
     return struct.pack(pack_format, length, MessageID.PIECE, index, begin, block)
 
 def send_extended_handshake(sock):

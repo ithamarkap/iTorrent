@@ -59,6 +59,8 @@ class Peer:
         self.supports_extensions = False
         self.ut_metadata_id = None
         self.metadata_size = None
+        self.peer_interested = False  # Peer wants to download FROM us
+        self.am_choking = True        # We are choking the peer (not sending to them)
 
     def add_piece_blocks(self, piece_index):
         number_of_full_blocks = self.determine_piece_size(piece_index) // BLOCK_SIZE  # Taking the integer value.
@@ -102,6 +104,7 @@ class Peer:
                         send_extended_handshake(self.sock)
                         
                     self.sock.send(pack_message(MessageID.UNCHOKE))
+                    self.am_choking = False
                     self.sock.send(pack_message(MessageID.INTERESTED)) # Signify interest for pieces/metadata
                     
                     if self.torrent_pieces and self.torrent_pieces.piece_amount > 0:
@@ -146,6 +149,13 @@ class Peer:
                 return False
                 
             self.supports_extensions = (response_data[25] & 0x10) != 0
+            
+            # Verify info_hash
+            received_info_hash = response_data[28:48]
+            if received_info_hash != self.torrent_info_hash:
+                logger.error(f"Info hash mismatch from {self.peer}. Expected {self.torrent_info_hash.hex()}, got {received_info_hash.hex()}")
+                return False
+                
             logger.info(f"SUCCESS: Valid incoming handshake received from {self.peer}! Extensions supported: {self.supports_extensions}")
             
             # Send our handshake back
@@ -156,6 +166,7 @@ class Peer:
             try:
                 from peer_handling import pack_message, MessageID, pack_bitfield
                 self.sock.send(pack_message(MessageID.UNCHOKE))
+                self.am_choking = False
                 
                 if self.torrent_pieces and self.torrent_pieces.piece_amount > 0:
                     bitfield = bytearray((self.torrent_pieces.piece_amount + 7) // 8)
@@ -208,7 +219,8 @@ class Peer:
                 self.is_not_listening = False
                 handle_response(self.sock, response_data, self.torrent_pieces, self, self.torrent_download_files)
             
-            if self.torrent_pieces is not None:
+            # Only request pieces if we don't already have them all (not seeding)
+            if self.torrent_pieces is not None and not self.torrent_pieces.is_done():
                 request_piece_block(self.sock, self.torrent_pieces, self)
             return True
 

@@ -241,6 +241,7 @@ class TorrentClient:
             print(f"Failed to install metadata natively: {e}")
             
     def verify_existing_files(self):
+        self.status = 'Verifying'
         print("Checking existing files data from disk...")
         if not getattr(self, 'pieces', None) or not getattr(self, 'download_files', None):
             return
@@ -260,8 +261,8 @@ class TorrentClient:
                 pass
                 
         print(f"Verified {verified_count}/{self.piece_amount} existing pieces natively.")
-        if verified_count > 0 and verified_count == self.piece_amount:
-            self.status = 'Seeding'
+        # Don't set Seeding here, let the _download_loop handle the transition
+        # so it can properly announce 'completed' to trackers and peers.
 
     def get_gui_data(self):
         progress = self.pieces.get_progress() if self.pieces else 0
@@ -304,17 +305,25 @@ class TorrentClient:
             while getattr(self, 'is_downloading', False):
                 try:
                     client, addr = self.server_sock.accept()
+                    # Use live references so we always have current piece state
                     peer_obj = Peer(addr, self.info_hash, self.peer_id, 
-                                    pieces=self.pieces, 
+                                    pieces=self.pieces,
                                     piece_size=self.piece_size, 
                                     piece_amount=self.piece_amount, 
                                     total_size=self.total_size, 
-                                    download_files=self.download_files)
+                                    download_files=self.download_files,
+                                    client=self)  # Pass client so peer gets live piece state
                     
                     if peer_obj.accept_connection(client):
+                        # Always update to latest pieces state before adding
+                        peer_obj.torrent_pieces = self.pieces
+                        peer_obj.torrent_download_files = self.download_files
+                        # Verify info_hash matches what we are hosting
+                        if peer_obj.info_hash != self.info_hash:
+                            print(f"Info hash mismatch from {addr}")
+                            continue
                         self.connected_peers.append(peer_obj)
-                        if self.piece_manager:
-                            self.piece_manager.add_seeder(peer_obj.peer)
+                        print(f"Accepted incoming connection from {addr}")
                 except socket.timeout:
                     pass
                 except Exception as e:
@@ -325,17 +334,34 @@ class TorrentClient:
 
     def _download_loop(self):
         import time
+        from peer_handling import pack_message, MessageID
         last_time = time.time()
         last_downloaded = 0
         has_announced_completed = False
+        last_choke_time = 0
         
         while self.is_downloading:
             if self.pieces and self.pieces.is_done() and self.status != 'Seeding':
+                print(f"Torrent {self.name} is complete! Transitioning to Seeding.")
                 self.status = 'Seeding'
                 self.download_speed = 0
                 if not has_announced_completed:
-                    self.get_peer_list(event=1) # 1 is completed
+                    self.get_peer_list(event=1)  # announce completed to tracker
                     has_announced_completed = True
+                
+                # Broadest BITFIELD only once to all connected peers
+                from peer_handling import pack_bitfield
+                bitfield = bytearray((self.piece_amount + 7) // 8)
+                for i in range(self.piece_amount):
+                    bitfield[i // 8] |= (1 << (7 - (i % 8)))
+                bitfield_msg = pack_bitfield(bytes(bitfield))
+                
+                for p in self.connected_peers:
+                    try:
+                        if p.sock:
+                            p.sock.send(bitfield_msg)
+                    except Exception:
+                        pass
                 
             if not self.pieces:
                 self.status = 'Fetching Metadata'
@@ -354,11 +380,28 @@ class TorrentClient:
                 
             self.communicate_peers()
             
+            # Periodic choke management for seeding
             current_time = time.time()
+            if current_time - last_choke_time >= 10:
+                last_choke_time = current_time
+                if self.status == 'Seeding':
+                    for p in self.connected_peers:
+                        if p.peer_interested and p.am_choking and p.sock:
+                            try:
+                                p.sock.send(pack_message(MessageID.UNCHOKE))
+                                p.am_choking = False
+                                print(f"Seeding: Unchoked interested peer {p.peer}")
+                            except Exception:
+                                pass
+            
             elapsed = current_time - last_time
             if elapsed >= 1.0:
                 if self.pieces:
-                    current_downloaded = sum(sum(1 for b in p if b) for p in self.pieces.received) * 16384
+                    if self.status == 'Seeding':
+                        current_downloaded = self.total_size
+                    else:
+                        current_downloaded = sum(sum(1 for b in p if b) for p in self.pieces.received) * 16384
+                    
                     delta = current_downloaded - last_downloaded
                     self.download_speed = max(0, delta / elapsed)
                     last_downloaded = current_downloaded
@@ -379,7 +422,8 @@ class TorrentClient:
                         if i not in self.verified_pieces:
                             if all(self.pieces.received[i]):
                                 if self.download_files.check_piece_hash(i):
-                                    print(f"Piece {i} verified! Broadcasting HAVE.")
+                                    if i % 10 == 0:
+                                        print(f"Piece {i} verified!")
                                     self.verified_pieces.add(i)
                                     from peer_handling import pack_have
                                     have_msg = pack_have(i)

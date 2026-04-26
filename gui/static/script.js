@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', function () {
     fetchTorrents();
 
     // Poll for updates (in a real app, use WebSockets or SSE)
-    setInterval(fetchTorrents, 2000);
+    setInterval(fetchTorrents, 1000);
 
     async function fetchTorrents() {
         try {

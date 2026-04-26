@@ -152,7 +152,7 @@ class TorrentClient:
         self.peer_list = list()
         self.connected_peers = list()
         self.communication_peers_per_loop = list()
-        self.MAX_PEER_CONNECTIONS = 50
+        self.MAX_PEER_CONNECTIONS = 75
 
         self.statuses = list()
         self.is_downloading = False
@@ -339,6 +339,10 @@ class TorrentClient:
                 
             if not self.pieces:
                 self.status = 'Fetching Metadata'
+            elif last_downloaded == 0 and self.pieces:
+                # Pieces just became available - reset timing so first speed sample is accurate
+                last_downloaded = sum(sum(1 for b in p if b) for p in self.pieces.received) * 16384
+                last_time = time.time()
                 
             if getattr(self, 'peer_list_timer', 0) <= time.time():
                 if not self.peer_list or len(self.connected_peers) < self.MAX_PEER_CONNECTIONS // 2:
@@ -355,7 +359,8 @@ class TorrentClient:
             if elapsed >= 1.0:
                 if self.pieces:
                     current_downloaded = sum(sum(1 for b in p if b) for p in self.pieces.received) * 16384
-                    self.download_speed = (current_downloaded - last_downloaded) / elapsed
+                    delta = current_downloaded - last_downloaded
+                    self.download_speed = max(0, delta / elapsed)
                     last_downloaded = current_downloaded
                     
                     current_uploaded_tick = 0
@@ -389,6 +394,10 @@ class TorrentClient:
                                     for block_idx in range(len(self.pieces.received[i])):
                                         self.pieces.received[i][block_idx] = False
                                         self.pieces.requested[i][block_idx] = False
+                else:
+                    self.download_speed = 0
+                    self.upload_speed = 0
+                    
                 last_time = current_time
                 
             time.sleep(0.01)
@@ -484,7 +493,7 @@ class TorrentClient:
 
         threads = []
         import threading
-        for peer_addr in peers_to_connect[:min(10, len(peers_to_connect))]:
+        for peer_addr in peers_to_connect[:min(30, len(peers_to_connect))]:
             if len(self.connected_peers) >= self.MAX_PEER_CONNECTIONS:
                 break
             t = threading.Thread(target=try_connect, args=(peer_addr,))
@@ -510,7 +519,7 @@ class TorrentClient:
                 return peer
             return None
                 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, max(1, len(self.communication_peers_per_loop)))) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(128, max(1, len(self.communication_peers_per_loop)))) as executor:
             to_remove = list(executor.map(_comm, self.communication_peers_per_loop))
             
         for bad_peer in filter(None, to_remove):

@@ -194,29 +194,25 @@ class Peer:
             import select
             from peer_handling import handle_response, request_piece_block
             while True:
-                readable, _, _ = select.select([self.sock], [], [], 0.01)
+                readable, _, _ = select.select([self.sock], [], [], 0.002)  # 2ms tick
                 if not readable:
                     break
                 
                 response_data = recv_by_length(self.sock)
                 if response_data is False or response_data is None:
-                    # Only kill peer if we already have pieces set up (download phase).
-                    # During metadata fetch, a closed socket is expected from some peers.
                     if self.torrent_pieces is not None:
                         return False
                     else:
-                        return True  # Keep alive even if this peer closed during metadata phase
+                        return True
                 
                 self.is_not_listening = False
                 handle_response(self.sock, response_data, self.torrent_pieces, self, self.torrent_download_files)
             
-            # Only request piece blocks once we have actual pieces to request
             if self.torrent_pieces is not None:
                 request_piece_block(self.sock, self.torrent_pieces, self)
             return True
 
         except Exception as e:
-            # Only remove peer during download phase on error
             if self.torrent_pieces is not None:
                 return False
             return True

@@ -66,12 +66,18 @@ class Pieces:
         self.received[piece_block['piece_index']][piece_block['begin'] // BLOCK_SIZE] = True
 
     def needed(self, piece_block):
+        idx = piece_block['piece_index']
+        b_idx = piece_block['begin'] // BLOCK_SIZE
+        
         if getattr(self, 'unrequested_blocks_count', self.blocks_amount) <= 0:
-            import copy
-            self.requested = copy.deepcopy(self.received)
-            self.unrequested_blocks_count = self.blocks_amount - sum(sum(1 for block in piece if block) for piece in self.received)
+            # Endgame: reset requested to match received (fast, no deepcopy)
+            for i in range(self.piece_amount):
+                self.requested[i] = self.received[i][:]
+            self.unrequested_blocks_count = self.blocks_amount - sum(
+                sum(1 for b in p if b) for p in self.received
+            )
             
-        return not self.requested[piece_block['piece_index']][piece_block['begin'] // BLOCK_SIZE]
+        return not self.requested[idx][b_idx]
 
     def get_progress(self):
         if self.blocks_amount == 0:

@@ -90,13 +90,11 @@ def handle_have(sock, payload, pieces, peer):
     Peer announces it has successfully downloaded and verified a piece.
     We add this piece to the peer's list of available pieces.
     """
-    # Unpack the 4-byte piece index
     piece_index = struct.unpack('!I', payload)[0]
     
     queue_was_empty = peer.empty()
     peer.add_piece_blocks(piece_index)
-    logger.debug(f"Peer has piece: {piece_index}")
-    if queue_was_empty:
+    if queue_was_empty and not peer.choked:
         request_piece_block(sock, pieces, peer)
 
 def handle_request(sock, payload, pieces, peer, download_files):
@@ -147,7 +145,7 @@ def handle_bitfield(sock, payload, pieces, peer):
                 # The peer has the piece at this index
                 peer.add_piece_blocks(i * 8 + j)
 
-    if queue_was_empty:
+    if queue_was_empty and not peer.choked:
         request_piece_block(sock, pieces, peer)
 
 
@@ -179,25 +177,42 @@ def handle_piece(sock, payload, pieces, peer, download_files):
 def request_piece_block(sock, pieces, peer):
     """
     Requests the next needed piece block from the peer.
-    If we are choked, we just let the peer know we are interested.
-    pieces may be None during magnet metadata fetching - in that case, do nothing.
+    Maintains a deep pipeline (up to 200 in-flight requests) for maximum throughput.
+    In endgame mode, re-queues all remaining unreceived blocks.
     """
     if pieces is None:
-        return  # Still fetching metadata via extension protocol, no pieces yet
+        return  # Still fetching metadata
     
     if peer.choked:
-        sock.send(pack_message(MessageID.INTERESTED))
+        try:
+            sock.send(pack_message(MessageID.INTERESTED))
+        except Exception:
+            pass
         return
 
-    if peer.empty() and peer.pending_requests == 0:
-        sock.send(pack_message(MessageID.INTERESTED))
-        return
+    # Endgame mode: if queue is empty but download isn't done, re-queue all unreceived blocks
+    if peer.empty() and not pieces.is_done():
+        BLOCK_SIZE = 16384
+        for piece_idx in range(pieces.piece_amount):
+            piece_size = pieces.determine_piece_size(piece_idx)
+            num_blocks = len(pieces.received[piece_idx])
+            for block_idx in range(num_blocks):
+                if not pieces.received[piece_idx][block_idx]:
+                    begin = block_idx * BLOCK_SIZE
+                    length = BLOCK_SIZE if begin + BLOCK_SIZE <= piece_size else piece_size % BLOCK_SIZE
+                    if length > 0:
+                        peer.queue.append({
+                            'piece_index': piece_idx,
+                            'begin': begin,
+                            'length': length
+                        })
 
+    # Fill the pipeline aggressively
+    MAX_PIPELINE = 200
     requests_sent = 0
-    while not peer.empty() and peer.pending_requests < 50 and requests_sent < 50:
+    while not peer.empty() and peer.pending_requests < MAX_PIPELINE and requests_sent < MAX_PIPELINE:
         piece_block = peer.pop()
-        if pieces and pieces.needed(piece_block):
-            # Send a request for this specific pending block
+        if pieces and not pieces.received[piece_block['piece_index']][piece_block['begin'] // 16384]:
             req_msg = pack_request(piece_block['piece_index'], piece_block['begin'], piece_block['length'])
             try:
                 sock.send(req_msg)
@@ -207,7 +222,6 @@ def request_piece_block(sock, pieces, peer):
             except Exception:
                 peer.queue.insert(0, piece_block)
                 break
-
 
 # Network Utilities
 def is_handshake(msg):
@@ -302,7 +316,7 @@ def pack_bitfield(bit_field):
     Format: <length=1+len(bitfield)><id=5><bitfield data>
     """
     length = len(bit_field) + 1
-    pack_format = '!IB'
+    pack_format = f'!IB{len(bit_field)}s'
     return struct.pack(pack_format, length, MessageID.BITFIELD, bit_field)
 
 

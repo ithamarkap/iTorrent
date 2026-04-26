@@ -120,7 +120,11 @@ def handle_request(sock, payload, pieces, peer, download_files):
     if data and len(data) == length:
         logger.debug(f"Uploading PIECE {index} block at offset {begin} (len: {length}) to {peer.peer}")
         msg = pack_piece(index, begin, data)
-        sock.send(msg)
+        try:
+            sock.send(msg)
+            peer.uploaded += length
+        except Exception as e:
+            logger.error(f"Failed to upload block: {e}")
 
 
 def handle_bitfield(sock, payload, pieces, peer):
@@ -183,7 +187,7 @@ def request_piece_block(sock, pieces, peer):
         return
 
     requests_sent = 0
-    while not peer.empty() and peer.pending_requests < 10 and requests_sent < 10:
+    while not peer.empty() and peer.pending_requests < 50 and requests_sent < 50:
         piece_block = peer.pop()
         if pieces.needed(piece_block):
             # Send a request for this specific pending block

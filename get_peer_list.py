@@ -6,7 +6,7 @@ import struct
 
 
 class TrackerClass:
-    def __init__(self, tracker_ip: tuple, sock: socket, torrent_instance: TorrentClass, peer_id: bytes, logger=None):
+    def __init__(self, tracker_ip: tuple, sock: socket, torrent_instance: TorrentClass, peer_id: bytes, logger=None, listen_port=6881):
         self.sock = sock  # Socket for communication
         self.sock.settimeout(5) # Timeout for the socket
         self.tracker_ip = tracker_ip  # The tracker IP
@@ -14,13 +14,15 @@ class TrackerClass:
         self.connection_id = 0  # Connection id, will not be a 0 after a successful connection.
         self.peer_id = peer_id  # Random 20 bytes for the id
         self.peer_list = []
+        self.listen_port = listen_port
+        
         if logger is None:
             import logging
             self.logger = logging.getLogger('TrackerClass')
         else:
             self.logger = logger
 
-    def start_communicating(self):
+    def start_communicating(self, event=0, downloaded=0, uploaded=0):
         try:
             self.logger.debug(f'Connecting to tracker: {self.tracker_ip}')
             self.sock.connect(self.tracker_ip)
@@ -48,7 +50,7 @@ class TrackerClass:
         self.logger.info(f'{self.torrent_instance.name}{self.tracker_ip} Received valid connection message: {tracker_con_msg} sending announce message...')
         ann_msg, transaction_id = self.create_announce_msg(tracker_con_msg['connection_id'],
                                                            self.torrent_instance.info_hash, self.peer_id,
-                                                           self.torrent_instance.size)
+                                                           self.torrent_instance.size, event, downloaded, uploaded)
         self.sock.send(ann_msg)
         self.logger.debug('Sent announce message, waiting for response...')
         
@@ -87,18 +89,16 @@ class TrackerClass:
             'connection_id': connection_id
         }
 
-    def create_announce_msg(self, connection_id, info_hash, peer_id, torrent_size):
+    def create_announce_msg(self, connection_id, info_hash, peer_id, torrent_size, event=0, downloaded=0, uploaded=0):
         """Create UDP tracker announce request message."""
         action = 1  # Announce action
         transaction_id = random.randint(0, 2**32 - 1)
-        downloaded = 0
-        left = torrent_size
-        uploaded = 0
-        event = 0  # 0: none; 1: completed; 2: started; 3: stopped
+        left = max(0, torrent_size - downloaded)
+        
         ip_address = 0  # Default
         key = random.randint(0, 2**32 - 1)
         num_want = 50  # Request explicitly 50 peers instead of -1
-        port = 6881  # Default BitTorrent port
+        port = self.listen_port
         
         msg = struct.pack('!QII20s20sQQQIIIiH',
                          connection_id, action, transaction_id,

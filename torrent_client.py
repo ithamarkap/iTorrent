@@ -148,11 +148,35 @@ class TorrentClient:
             self.Error = True
             
         self.setup_download_files()
+        self.verify_existing_files()
         
         self.peer_list = list()
+        
+    def verify_existing_files(self):
+        print("Checking existing files data from disk...")
+        if not self.pieces or not self.download_files:
+            return
+            
+        verified_count = 0
+        for i in range(self.piece_amount):
+            try:
+                if self.download_files.check_piece_hash(i):
+                    verified_count += 1
+                    for block_idx in range(len(self.pieces.received[i])):
+                        if not self.pieces.received[i][block_idx]:
+                            self.pieces.received[i][block_idx] = True
+                            self.pieces.requested[i][block_idx] = True
+                            if hasattr(self.pieces, 'unrequested_blocks_count'):
+                                self.pieces.unrequested_blocks_count -= 1
+            except Exception:
+                pass
+                
+        print(f"Verified {verified_count}/{self.piece_amount} existing pieces natively.")
+        if verified_count > 0 and verified_count == self.piece_amount:
+            self.status = 'Seeding'
         self.connected_peers = list()
         self.communication_peers_per_loop = list()
-        self.MAX_PEER_CONNECTIONS = 4
+        self.MAX_PEER_CONNECTIONS = 50
 
         self.statuses = list()
         self.is_downloading = False
@@ -179,8 +203,8 @@ class TorrentClient:
             'name': self.name,
             'status': self.status,
             'progress': round(progress, 2),
-            'downloadSpeed': f"{self.download_speed / 1024:.2f} KB/s",
-            'uploadSpeed': f"{self.upload_speed / 1024:.2f} KB/s"
+            'downloadSpeed': f"{self.download_speed / 1048576:.2f} MB/s",
+            'uploadSpeed': f"{self.upload_speed / 1048576:.2f} MB/s"
         }
 
     def start(self):
@@ -188,26 +212,71 @@ class TorrentClient:
         self.is_downloading = True
         self.status = 'Downloading'
         import threading
+        self.setup_listener()
         self.thread = threading.Thread(target=self._download_loop, daemon=True)
         self.thread.start()
+
+    def setup_listener(self):
+        import socket
+        import threading
+        self.listen_port = 6881
+        self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        for port in range(6881, 6890):
+            try:
+                self.server_sock.bind(('0.0.0.0', port))
+                self.listen_port = port
+                break
+            except Exception:
+                continue
+                
+        self.server_sock.listen(5)
+        self.server_sock.settimeout(1)
+        
+        def accept_clients():
+            from peer_manager import Peer
+            while getattr(self, 'is_downloading', False):
+                try:
+                    client, addr = self.server_sock.accept()
+                    peer_obj = Peer(addr, self.info_hash, self.peer_id, 
+                                    pieces=self.pieces, 
+                                    piece_size=self.piece_size, 
+                                    piece_amount=self.piece_amount, 
+                                    total_size=self.total_size, 
+                                    download_files=self.download_files)
+                    
+                    if peer_obj.accept_connection(client):
+                        self.connected_peers.append(peer_obj)
+                        if self.piece_manager:
+                            self.piece_manager.add_seeder(peer_obj.peer)
+                except socket.timeout:
+                    pass
+                except Exception as e:
+                    break
+                    
+        self.listener_thread = threading.Thread(target=accept_clients, daemon=True)
+        self.listener_thread.start()
 
     def _download_loop(self):
         import time
         last_time = time.time()
         last_downloaded = 0
+        has_announced_completed = False
         
         while self.is_downloading:
-            if self.pieces and self.pieces.is_done():
+            if self.pieces and self.pieces.is_done() and self.status != 'Seeding':
                 self.status = 'Seeding'
                 self.download_speed = 0
-                self.is_downloading = False
-                break
+                if not has_announced_completed:
+                    self.get_peer_list(event=1) # 1 is completed
+                    has_announced_completed = True
                 
             if not self.pieces:
                 self.status = 'Fetching Metadata'
                 
-            if not self.peer_list:
-                self.get_peer_list()
+            if getattr(self, 'peer_list_timer', 0) <= time.time():
+                if not self.peer_list or len(self.connected_peers) < self.MAX_PEER_CONNECTIONS // 2:
+                    self.get_peer_list()
+                    self.peer_list_timer = time.time() + 30 # Ping tracker at most every 30s
                 
             if len(self.connected_peers) < self.MAX_PEER_CONNECTIONS:
                 self.connect_peers()
@@ -221,6 +290,15 @@ class TorrentClient:
                     current_downloaded = sum(sum(1 for b in p if b) for p in self.pieces.received) * 16384
                     self.download_speed = (current_downloaded - last_downloaded) / elapsed
                     last_downloaded = current_downloaded
+                    
+                    current_uploaded_tick = 0
+                    for p in self.connected_peers:
+                        if hasattr(p, 'uploaded'):
+                            current_uploaded_tick += p.uploaded
+                            p.uploaded = 0
+                            
+                    self.upload_speed = current_uploaded_tick / elapsed
+                    self.total_uploaded = getattr(self, 'total_uploaded', 0) + current_uploaded_tick
                     
                     if not hasattr(self, 'verified_pieces'):
                         self.verified_pieces = set()
@@ -258,11 +336,15 @@ class TorrentClient:
             print("Failed to setup pieces.", e)
             return False
 
-    def get_peer_list(self):
+    def get_peer_list(self, event=0):
         from get_peer_list import TrackerClass
         """Iterates over the announce urls to obtain a list of peers."""
         print(f"Contacting trackers for {self.name}...")
         breaking = False
+        
+        current_downloaded = sum(sum(1 for b in p if b) for p in self.pieces.received) * 16384 if self.pieces else 0
+        current_uploaded = getattr(self, 'total_uploaded', 0)
+        
         for url in self.announce_urls:
             if not url.startswith('udp:'):
                 print(f"Skipping unsupported tracker format: {url}")
@@ -277,8 +359,9 @@ class TorrentClient:
                 tracker_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 tracker_sock.settimeout(3)
                 
-                tracker = TrackerClass(tracker_addr, tracker_sock, self.parsed_torrent, self.peer_id)
-                peer_list = tracker.start_communicating()
+                listen_port = getattr(self, 'listen_port', 6881)
+                tracker = TrackerClass(tracker_addr, tracker_sock, self.parsed_torrent, self.peer_id, listen_port=listen_port)
+                peer_list = tracker.start_communicating(event=event, downloaded=current_downloaded, uploaded=current_uploaded)
                 
                 if peer_list:
                     self.peer_list = [(p['ip'], p['port']) for p in peer_list]
@@ -299,10 +382,10 @@ class TorrentClient:
 
     def connect_peers(self):
         from peer_manager import Peer
-        import threading
-        print("Connecting to peers concurrently...")
-
-        if not self.peer_list:
+        import concurrent.futures
+        
+        peers_to_connect = [peer for peer in self.peer_list if peer not in [p.peer for p in self.connected_peers]]
+        if not peers_to_connect:
             return True
             
         def try_connect(peer_addr):
@@ -328,7 +411,8 @@ class TorrentClient:
                 print(f"Failed to initialize/connect peer {peer_addr}: {e}")
 
         threads = []
-        for peer_addr in self.peer_list[:min(20, len(self.peer_list))]:
+        import threading
+        for peer_addr in peers_to_connect[:min(20, len(peers_to_connect))]:
             if len(self.connected_peers) >= self.MAX_PEER_CONNECTIONS:
                 break
             t = threading.Thread(target=try_connect, args=(peer_addr,))
@@ -339,25 +423,31 @@ class TorrentClient:
         for t in threads:
             t.join()
 
-        print("Done connecting!", [(p.peer[0], p.peer[1]) for p in self.connected_peers])
-
     def communicate_peers(self):
+        import concurrent.futures
         self.communication_peers_per_loop = self.connected_peers.copy()
 
         if not self.communication_peers_per_loop:
             return "Connect"
             
-        for peer in self.communication_peers_per_loop:
+        def _comm(peer):
             try:
                 if not peer.communicate():
-                    self.connected_peers.remove(peer)
-                    if peer.peer in self.peer_list:
-                        self.peer_list.remove(peer.peer)
-                    print("Problem communicating peer: ", peer.peer)
-                    return "Connect"
-            except Exception as e:
-                print(f"Error communicating with {peer.peer}: {e}")
-                self.connected_peers.remove(peer)
+                    return peer
+            except Exception:
+                return peer
+            return None
+                
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, max(1, len(self.communication_peers_per_loop)))) as executor:
+            to_remove = list(executor.map(_comm, self.communication_peers_per_loop))
+            
+        for bad_peer in filter(None, to_remove):
+            if bad_peer in self.connected_peers:
+                self.connected_peers.remove(bad_peer)
+                if bad_peer.peer in self.peer_list:
+                    self.peer_list.remove(bad_peer.peer)
+                print("Problem communicating peer: ", bad_peer.peer)
+                return "Connect"
 
         return False
 

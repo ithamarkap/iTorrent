@@ -55,17 +55,22 @@ class Pieces:
         return self.piece_size
 
     def add_request(self, piece_block):
-        self.requested[piece_block['piece_index']][piece_block['begin'] // BLOCK_SIZE] = True
+        idx, b_idx = piece_block['piece_index'], piece_block['begin'] // BLOCK_SIZE
+        if getattr(self, 'unrequested_blocks_count', 0) == 0:
+            self.unrequested_blocks_count = self.blocks_amount
+        if not self.requested[idx][b_idx]:
+             self.requested[idx][b_idx] = True
+             self.unrequested_blocks_count -= 1
 
     def add_received(self, piece_block):
         self.received[piece_block['piece_index']][piece_block['begin'] // BLOCK_SIZE] = True
 
     def needed(self, piece_block):
-        for piece_index in self.requested:
-            for block in piece_index:
-                if not block:
-                    return not self.requested[piece_block['piece_index']][piece_block['begin'] // BLOCK_SIZE]
-        self.requested = self.received  # This means we have requested everything but we still haven't received everything maybe due to dropped connections.
+        if getattr(self, 'unrequested_blocks_count', self.blocks_amount) <= 0:
+            import copy
+            self.requested = copy.deepcopy(self.received)
+            self.unrequested_blocks_count = self.blocks_amount - sum(sum(1 for block in piece if block) for piece in self.received)
+            
         return not self.requested[piece_block['piece_index']][piece_block['begin'] // BLOCK_SIZE]
 
     def get_progress(self):

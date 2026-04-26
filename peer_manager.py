@@ -52,6 +52,7 @@ class Peer:
         self.torrent_info_hash = info_hash
         self.torrent_peer_id = peer_id
         self.is_not_listening = False
+        self.uploaded = 0
 
     def add_piece_blocks(self, piece_index):
         number_of_full_blocks = self.determine_piece_size(piece_index) // BLOCK_SIZE  # Taking the integer value.
@@ -116,6 +117,53 @@ class Peer:
             logger.warning(f"Failed to connect or handshake with {self.peer}: {e}")
             return False
 
+    def accept_connection(self, client_sock):
+        """
+        Passive accept of an incoming TCP connection.
+        Skips the outgoing connect block, but immediately waits for a handshake.
+        """
+        try:
+            self.sock = client_sock
+            self.sock.settimeout(3)
+            
+            logger.info(f"Accepted TCP connection from {self.peer}. Waiting for handshake...")
+            from peer_manager import recv_handshake, is_handshake
+            
+            response_data = recv_handshake(self.sock, 68)
+            
+            if not response_data or not is_handshake(response_data):
+                logger.error("Invalid or empty handshake from incoming peer.")
+                return False
+                
+            logger.info(f"SUCCESS: Valid incoming handshake received from {self.peer}!")
+            
+            # Send our handshake back
+            # info_hash and peer_id are raw bytes already in self
+            self.sock.send(pack_handshake(self.torrent_info_hash, self.torrent_peer_id))
+            
+            # Unchoke the peer and send bitfield
+            try:
+                from peer_handling import pack_message, MessageID, pack_bitfield
+                self.sock.send(pack_message(MessageID.UNCHOKE))
+                
+                if self.torrent_pieces and self.torrent_pieces.piece_amount > 0:
+                    bitfield = bytearray((self.torrent_pieces.piece_amount + 7) // 8)
+                    has_any = False
+                    for i in range(self.torrent_pieces.piece_amount):
+                        if all(self.torrent_pieces.received[i]):
+                            bitfield[i // 8] |= (1 << (7 - (i % 8)))
+                            has_any = True
+                    if has_any:
+                        self.sock.send(pack_bitfield(bytes(bitfield)))
+            except Exception as e:
+                logger.error(f"Error sending unchoke/bitfield: {e}")
+                
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Failed to handshake with incoming peer {self.peer}: {e}")
+            return False
+
     def close(self):
         if self.sock:
             self.sock.close()
@@ -132,14 +180,20 @@ class Peer:
 
     def communicate(self):
         try:
-            # We don't want to log every single tick
-            response_data = recv_by_length(self.sock)
-            if response_data:
+            import select
+            readable, _, _ = select.select([self.sock], [], [], 0.05)
+            
+            if readable:
+                response_data = recv_by_length(self.sock)
+                if response_data is False or response_data is None:
+                    return False # Connection abruptly closed or dropped, purge peer instance
+                
                 self.is_not_listening = False
                 handle_response(self.sock, response_data, self.torrent_pieces, self, self.torrent_download_files)
             else:
                 self.is_not_listening = True
-                request_piece_block(self.sock, self.torrent_pieces, self)
+                
+            request_piece_block(self.sock, self.torrent_pieces, self)
             return True
 
         except Exception as e:

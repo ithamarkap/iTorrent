@@ -97,11 +97,76 @@
                 </div>
             </aside>
 
-            <!-- Main Content -->
-            <main class="card torrent-list-container">
-                <h2>Active Torrents</h2>
-                <div id="torrent-list">
-                    <!-- Torrents will be injected here via JS -->
+            <main class="card main-view-container">
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="torrents">Active Torrents</button>
+                    <button class="tab-btn" data-tab="statistics">Statistics</button>
+                </div>
+
+                <div id="torrents-view" class="tab-content active">
+                    <div id="torrent-list">
+                        <!-- Torrents will be injected here via JS -->
+                    </div>
+                </div>
+
+                <div id="statistics-view" class="tab-content">
+                    <div id="no-torrent-selected" class="empty-state">
+                        Select a torrent from the list to view detailed statistics
+                    </div>
+                    <div id="stats-container" style="display: none;">
+                        <h2 id="stats-torrent-name">Torrent Name</h2>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <span class="stat-label">Status</span>
+                                <span class="stat-value" id="stat-status">-</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">Progress</span>
+                                <span class="stat-value" id="stat-progress">-</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">Download Speed</span>
+                                <span class="stat-value" id="stat-download-speed">-</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">Upload Speed</span>
+                                <span class="stat-value" id="stat-upload-speed">-</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">Total Downloaded</span>
+                                <span class="stat-value" id="stat-total-downloaded">-</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">Total Uploaded</span>
+                                <span class="stat-value" id="stat-total-uploaded">-</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">Share Ratio</span>
+                                <span class="stat-value" id="stat-ratio">-</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">Peers</span>
+                                <span class="stat-value" id="stat-peers">-</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">Elapsed Time</span>
+                                <span class="stat-value" id="stat-elapsed">-</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">ETA</span>
+                                <span class="stat-value" id="stat-eta">-</span>
+                            </div>
+                        </div>
+
+                        <h3>Piece Chart</h3>
+                        <div id="piece-chart-container">
+                            <div id="piece-chart"></div>
+                        </div>
+                        <div class="piece-chart-legend">
+                            <div class="legend-item"><span class="box downloaded"></span> Downloaded</div>
+                            <div class="legend-item"><span class="box missing"></span> Missing</div>
+                        </div>
+                    </div>
                 </div>
             </main>
         </div>

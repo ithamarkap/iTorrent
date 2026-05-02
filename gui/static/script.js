@@ -6,6 +6,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const downloadPathEl = document.getElementById('download-path');
     const changeDirBtn = document.getElementById('change-dir-btn');
     const themeToggleBtn = document.getElementById('theme-toggle');
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    let selectedTorrentId = null;
+    let allTorrents = [];
 
     // Theme toggle functionality (dark mode by default)
     const currentTheme = localStorage.getItem('theme') || 'dark';
@@ -21,6 +26,23 @@ document.addEventListener('DOMContentLoaded', function () {
         localStorage.setItem('theme', isLight ? 'light' : 'dark');
     });
 
+    // Tab Switching
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabName = btn.getAttribute('data-tab');
+
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabContents.forEach(c => c.classList.remove('active'));
+
+            btn.classList.add('active');
+            document.getElementById(`${tabName}-view`).classList.add('active');
+
+            if (tabName === 'statistics') {
+                updateStatistics();
+            }
+        });
+    });
+
     // Initial Load
     fetchTorrents();
 
@@ -30,8 +52,11 @@ document.addEventListener('DOMContentLoaded', function () {
     async function fetchTorrents() {
         try {
             const response = await fetch('/api/torrents');
-            const torrents = await response.json();
-            renderTorrents(torrents);
+            allTorrents = await response.json();
+            renderTorrents(allTorrents);
+            if (selectedTorrentId !== null) {
+                updateStatistics();
+            }
         } catch (error) {
             console.error('Error fetching torrents:', error);
         }
@@ -52,6 +77,20 @@ document.addEventListener('DOMContentLoaded', function () {
         torrents.forEach(torrent => {
             const item = document.createElement('div');
             item.className = 'torrent-item';
+            if (torrent.id === selectedTorrentId) {
+                item.classList.add('selected');
+            }
+
+            // Click to select torrent
+            item.addEventListener('click', (e) => {
+                // Don't select if clicking a button
+                if (e.target.tagName === 'BUTTON') return;
+                
+                selectedTorrentId = torrent.id;
+                document.querySelectorAll('.torrent-item').forEach(i => i.classList.remove('selected'));
+                item.classList.add('selected');
+                updateStatistics();
+            });
 
             const isPaused = torrent.status === 'Paused';
             const actionBtnText = isPaused ? 'Start' : 'Pause';
@@ -155,15 +194,123 @@ document.addEventListener('DOMContentLoaded', function () {
     // Global function to be called from HTML onclick
     window.handleTorrentAction = async (id, action) => {
         try {
-            await fetch(`/api/torrents/${id}/action`, {
+            const response = await fetch(`/api/torrents/${id}/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action })
             });
+            const result = await response.json();
+            if (result.removed && selectedTorrentId === id) {
+                selectedTorrentId = null;
+                updateStatistics();
+            }
             fetchTorrents();
         } catch (error) {
             console.error('Error performing action:', error);
         }
+    }
+
+    function updateStatistics() {
+        const noSelection = document.getElementById('no-torrent-selected');
+        const statsContainer = document.getElementById('stats-container');
+
+        if (selectedTorrentId === null) {
+            noSelection.style.display = 'flex';
+            statsContainer.style.display = 'none';
+            return;
+        }
+
+        const torrent = allTorrents.find(t => t.id === selectedTorrentId);
+        if (!torrent) {
+            selectedTorrentId = null;
+            noSelection.style.display = 'flex';
+            statsContainer.style.display = 'none';
+            return;
+        }
+
+        noSelection.style.display = 'none';
+        statsContainer.style.display = 'block';
+
+        // Update Text Info
+        document.getElementById('stats-torrent-name').textContent = torrent.name;
+        document.getElementById('stat-status').textContent = torrent.status;
+        document.getElementById('stat-progress').textContent = `${torrent.progress}%`;
+        document.getElementById('stat-download-speed').textContent = torrent.downloadSpeed;
+        document.getElementById('stat-upload-speed').textContent = torrent.uploadSpeed;
+        document.getElementById('stat-total-downloaded').textContent = formatBytes(torrent.totalDownloaded);
+        document.getElementById('stat-total-uploaded').textContent = formatBytes(torrent.totalUploaded);
+        
+        const ratio = torrent.totalDownloaded > 0 ? (torrent.totalUploaded / torrent.totalDownloaded).toFixed(2) : '0.00';
+        document.getElementById('stat-ratio').textContent = ratio;
+        document.getElementById('stat-peers').textContent = torrent.peerCount;
+        document.getElementById('stat-elapsed').textContent = formatTime(torrent.elapsedTime);
+        
+        // Calculate ETA
+        if (torrent.progress >= 100 || torrent.status === 'Paused' || parseFloat(torrent.downloadSpeed) === 0) {
+            document.getElementById('stat-eta').textContent = '∞';
+        } else {
+            const speedBytes = parseFloat(torrent.downloadSpeed) * 1048576; // MB/s to B/s
+            const remainingBytes = (100 - torrent.progress) / 100 * torrent.totalSize;
+            const etaSeconds = remainingBytes / speedBytes;
+            document.getElementById('stat-eta').textContent = formatTime(etaSeconds);
+        }
+
+        renderPieceChart(torrent.bitfield);
+    }
+
+    function renderPieceChart(bitfield) {
+        const chart = document.getElementById('piece-chart');
+        if (!bitfield || bitfield.length === 0) {
+            chart.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">No piece data available</div>';
+            return;
+        }
+
+        // Optimization: only redraw if length changed or first time
+        if (chart.children.length !== bitfield.length) {
+            chart.innerHTML = '';
+            const fragment = document.createDocumentFragment();
+            for (let i = 0; i < bitfield.length; i++) {
+                const box = document.createElement('div');
+                box.className = 'piece-box ' + (bitfield[i] ? 'downloaded' : 'missing');
+                box.title = `Piece ${i}: ${bitfield[i] ? 'Downloaded' : 'Missing'}`;
+                fragment.appendChild(box);
+            }
+            chart.appendChild(fragment);
+        } else {
+            // Just update classes
+            for (let i = 0; i < bitfield.length; i++) {
+                const box = chart.children[i];
+                const isDownloaded = bitfield[i] === 1;
+                if (isDownloaded && !box.classList.contains('downloaded')) {
+                    box.classList.remove('missing');
+                    box.classList.add('downloaded');
+                } else if (!isDownloaded && !box.classList.contains('missing')) {
+                    box.classList.remove('downloaded');
+                    box.classList.add('missing');
+                }
+            }
+        }
+    }
+
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatTime(seconds) {
+        if (!seconds || seconds === Infinity) return '∞';
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        
+        let result = '';
+        if (h > 0) result += h + 'h ';
+        if (m > 0 || h > 0) result += m + 'm ';
+        result += s + 's';
+        return result;
     }
 
     // Peer List Viewer functionality

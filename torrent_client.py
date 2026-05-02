@@ -159,6 +159,9 @@ class TorrentClient:
         
         self.download_speed = 0
         self.upload_speed = 0
+        self.session_downloaded = 0
+        self.session_uploaded = 0
+        self.start_time = time.time()
         self.status = 'Paused'
         
         self.user_info = {
@@ -266,13 +269,30 @@ class TorrentClient:
 
     def get_gui_data(self):
         progress = self.pieces.get_progress() if self.pieces else 0
+        
+        # Calculate piece bitfield for the piece chart
+        bitfield = []
+        if self.pieces:
+            for i in range(self.piece_amount):
+                bitfield.append(1 if all(self.pieces.received[i]) else 0)
+        
+        elapsed_time = time.time() - self.start_time
+        
         return {
             'id': id(self),
             'name': self.name,
             'status': self.status,
             'progress': round(progress, 2),
             'downloadSpeed': f"{self.download_speed / 1048576:.2f} MB/s",
-            'uploadSpeed': f"{self.upload_speed / 1048576:.2f} MB/s"
+            'uploadSpeed': f"{self.upload_speed / 1048576:.2f} MB/s",
+            'totalDownloaded': self.session_downloaded,
+            'totalUploaded': self.session_uploaded,
+            'elapsedTime': int(elapsed_time),
+            'peerCount': len(self.connected_peers),
+            'bitfield': bitfield,
+            'pieceAmount': self.piece_amount,
+            'totalSize': self.total_size,
+            'infoHash': self.info_hash.hex() if hasattr(self, 'info_hash') else ''
         }
 
     def start(self):
@@ -404,6 +424,8 @@ class TorrentClient:
                     
                     delta = current_downloaded - last_downloaded
                     self.download_speed = max(0, delta / elapsed)
+                    if delta > 0:
+                        self.session_downloaded += delta
                     last_downloaded = current_downloaded
                     
                     current_uploaded_tick = 0
@@ -413,6 +435,7 @@ class TorrentClient:
                             p.uploaded = 0
                             
                     self.upload_speed = current_uploaded_tick / elapsed
+                    self.session_uploaded += current_uploaded_tick
                     self.total_uploaded = getattr(self, 'total_uploaded', 0) + current_uploaded_tick
                     
                     if not hasattr(self, 'verified_pieces'):

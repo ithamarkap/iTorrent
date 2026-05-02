@@ -194,10 +194,19 @@ document.addEventListener('DOMContentLoaded', function () {
     // Global function to be called from HTML onclick
     window.handleTorrentAction = async (id, action) => {
         try {
+            let deleteFiles = false;
+            if (action === 'remove') {
+                deleteFiles = await showCustomModal({
+                    title: 'Delete Files?',
+                    message: 'Do you want to delete the downloaded files as well?',
+                    detail: 'This will permanently remove the files from your disk.'
+                });
+            }
+
             const response = await fetch(`/api/torrents/${id}/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action })
+                body: JSON.stringify({ action, delete_files: deleteFiles })
             });
             const result = await response.json();
             if (result.removed && selectedTorrentId === id) {
@@ -208,6 +217,40 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch (error) {
             console.error('Error performing action:', error);
         }
+    }
+
+    function showCustomModal(options) {
+        return new Promise((resolve) => {
+            const overlay = document.getElementById('modal-overlay');
+            const title = document.getElementById('modal-title');
+            const message = document.getElementById('modal-message');
+            const confirmBtn = document.getElementById('modal-confirm-btn');
+            const cancelBtn = document.getElementById('modal-cancel-btn');
+
+            title.textContent = options.title || 'Confirm';
+            message.innerHTML = `${options.message}${options.detail ? '<br><small style="color: var(--text-secondary);">' + options.detail + '</small>' : ''}`;
+
+            overlay.classList.add('active');
+
+            const handleConfirm = () => {
+                cleanup();
+                resolve(true);
+            };
+
+            const handleCancel = () => {
+                cleanup();
+                resolve(false);
+            };
+
+            const cleanup = () => {
+                overlay.classList.remove('active');
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+            };
+
+            confirmBtn.addEventListener('click', handleConfirm);
+            cancelBtn.addEventListener('click', handleCancel);
+        });
     }
 
     function updateStatistics() {

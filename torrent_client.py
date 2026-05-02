@@ -637,21 +637,8 @@ class TorrentClient:
             print("Problem setting up download files ", e)
             return True
 
+    def delete_files(self):
+        if self.download_files:
+            return self.download_files.delete_files()
+        return False
 
-def main():
-    torrent_path = "ubuntu-24.04.4-desktop-amd64.iso.torrent"
-    print(f"Initializing Torrent Client for {torrent_path}")
-    
-    my_torrent = TorrentClient(torrent_path=torrent_path)
-
-    if my_torrent.Error:
-        print("Initialization failed.")
-        return
-
-    print("Torrent info:")
-    for k, v in my_torrent.user_info.items():
-        print(f"  {k}: {v}")
-        
-
-if __name__ == "__main__":
-    main()

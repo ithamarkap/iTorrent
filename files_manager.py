@@ -135,3 +135,19 @@ class Files:
 
     def get_total_size(self):
         return sum(f['length'] for f in self.file_map)
+
+    def delete_files(self):
+        import shutil
+        try:
+            # Delete individual files
+            for f_info in self.file_map:
+                if os.path.exists(f_info['path']):
+                    os.remove(f_info['path'])
+            
+            # Delete directory if empty or just containing the torrent files
+            if os.path.exists(self.relative_directory):
+                shutil.rmtree(self.relative_directory, ignore_errors=True)
+            return True
+        except Exception as e:
+            print(f"Failed to delete files: {e}")
+            return False

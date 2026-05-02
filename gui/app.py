@@ -67,6 +67,8 @@ def torrent_action(torrent_id):
                 client.status = 'Paused'
             elif action == 'remove':
                 client.is_downloading = False
+                if data.get('delete_files'):
+                    client.delete_files()
                 active_torrents.remove(client)
                 return jsonify({'success': True, 'removed': True})
             return jsonify({'success': True, 'torrent': client.get_gui_data()})

@@ -300,6 +300,7 @@ class TorrentClient:
             'bitfield': bitfield,
             'pieceAmount': self.piece_amount,
             'totalSize': self.total_size,
+            'eta': int((self.total_size * (1 - progress/100)) / self.download_speed) if self.download_speed > 0 else -1,
             'infoHash': self.info_hash.hex() if hasattr(self, 'info_hash') else ''
         }
 

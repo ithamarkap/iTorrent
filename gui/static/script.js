@@ -39,12 +39,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (tabName === 'statistics') {
                 updateStatistics();
+            } else if (tabName === 'logs') {
+                fetchLogs();
             }
         });
     });
 
     // Initial Load
     fetchTorrents();
+    fetchLogs();
+    setupLogStream();
 
     // Poll for updates (in a real app, use WebSockets or SSE)
     setInterval(fetchTorrents, 1000);
@@ -101,7 +105,10 @@ document.addEventListener('DOMContentLoaded', function () {
             <div class="torrent-info">
                 <div class="name">${torrent.name}</div>
                 <div class="meta">
-                    ${torrent.status} • ${torrent.progress}% • ↓ ${torrent.downloadSpeed} • ↑ ${torrent.uploadSpeed}
+                    ${torrent.status} • ${round(torrent.progress, 1)}% • ↓ ${torrent.downloadSpeed} • ↑ ${torrent.uploadSpeed}
+                </div>
+                <div class="meta" style="font-size: 0.8em; opacity: 0.8; margin-top: 2px;">
+                    Size: ${formatSize(torrent.totalSize)} • Peers: ${torrent.peerCount} • ETA: ${formatETA(torrent.eta)}
                 </div>
                 <div class="progress-bar">
                     <div class="progress-fill" style="width: ${torrent.progress}%"></div>
@@ -282,6 +289,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('stat-upload-speed').textContent = torrent.uploadSpeed;
         document.getElementById('stat-total-downloaded').textContent = formatBytes(torrent.totalDownloaded);
         document.getElementById('stat-total-uploaded').textContent = formatBytes(torrent.totalUploaded);
+        document.getElementById('stat-total-size').textContent = formatBytes(torrent.totalSize);
         
         const ratio = torrent.totalDownloaded > 0 ? (torrent.totalUploaded / torrent.totalDownloaded).toFixed(2) : '0.00';
         document.getElementById('stat-ratio').textContent = ratio;
@@ -453,6 +461,81 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         peerResults.style.display = 'block';
+    }
+
+    // Logging functionality
+    async function fetchLogs() {
+        try {
+            const response = await fetch('/api/logs');
+            const data = await response.json();
+            renderLogs(data.logs, true); // true means clear current view
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+        }
+    }
+
+    function setupLogStream() {
+        const source = new EventSource('/api/logs/stream');
+        source.onmessage = function(event) {
+            renderLogs([event.data], false); // false means append
+        };
+        source.onerror = function(err) {
+            console.error('EventSource failed:', err);
+            source.close();
+            // Retry after 5 seconds
+            setTimeout(setupLogStream, 5000);
+        };
+    }
+
+    function renderLogs(logs, clear) {
+        const logContainer = document.getElementById('log-container');
+        if (!logContainer) return;
+
+        if (clear) {
+            logContainer.innerHTML = '';
+        }
+
+        logs.forEach(log => {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.textContent = log;
+            logContainer.appendChild(logEntry);
+        });
+
+        // Auto-scroll to bottom
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    function formatSize(bytes) {
+        if (!bytes || bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatETA(seconds) {
+        if (seconds === -1) return '∞';
+        if (seconds === 0) return '0s';
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = seconds % 60;
+        if (h > 0) return `${h}h ${m}m`;
+        if (m > 0) return `${m}m ${s}s`;
+        return `${s}s`;
+    }
+
+    function round(value, precision) {
+        var multiplier = Math.pow(10, precision || 0);
+        return Math.round(value * multiplier) / multiplier;
+    }
+
+    const clearLogsBtn = document.getElementById('clear-logs-btn');
+    if (clearLogsBtn) {
+        clearLogsBtn.addEventListener('click', () => {
+            const logContainer = document.getElementById('log-container');
+            if (logContainer) logContainer.innerHTML = '';
+        });
     }
 
 }); // End DOMContentLoaded

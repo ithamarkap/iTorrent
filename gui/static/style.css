@@ -513,4 +513,30 @@ code {
     font-size: 14px;
     margin: 0;
 }
+
+/* Log View Styles */
+.log-container {
+    background-color: #000;
+    color: #0f0;
+    font-family: 'Courier New', Courier, monospace;
+    padding: 10px;
+    border-radius: 4px;
+    height: 400px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.4;
+    border: 1px solid var(--border-color);
+    margin-top: 10px;
+}
+
+.log-entry {
+    margin-bottom: 2px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.log-controls {
+    display: flex;
+    justify-content: flex-end;
+}
 

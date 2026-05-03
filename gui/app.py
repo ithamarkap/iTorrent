@@ -1,6 +1,40 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response
 import os
 import sys
+import logging
+import time
+from collections import deque
+import threading
+
+# Global log buffer
+log_buffer = deque(maxlen=500)
+
+class LogCaptureHandler(logging.Handler):
+    def emit(self, record):
+        msg = self.format(record)
+        log_buffer.append(msg)
+
+class StdoutRedirector:
+    def __init__(self, original_stream):
+        self.original_stream = original_stream
+
+    def write(self, data):
+        if data.strip():
+            log_buffer.append(data.strip())
+        self.original_stream.write(data)
+
+    def flush(self):
+        self.original_stream.flush()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+capture_handler = LogCaptureHandler()
+capture_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logging.getLogger().addHandler(capture_handler)
+
+# Redirect stdout/stderr to capture prints
+sys.stdout = StdoutRedirector(sys.stdout)
+sys.stderr = StdoutRedirector(sys.stderr)
 
 # Determine the correct template and static folders
 if getattr(sys, 'frozen', False):
@@ -186,6 +220,26 @@ def get_peers():
 def update_settings():
     # TODO: Save settings
     return jsonify({'success': True})
+
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    return jsonify({'logs': list(log_buffer)})
+
+@app.route('/api/logs/stream')
+def stream_logs():
+    def event_stream():
+        # Send all existing logs first
+        # (This helps if the user switches to the tab and we want to show history)
+        # However, EventSource reconnects, so we might get duplicates.
+        # For simplicity, let's just send new logs.
+        last_len = len(log_buffer)
+        while True:
+            if len(log_buffer) > last_len:
+                for i in range(last_len, len(log_buffer)):
+                    yield f"data: {log_buffer[i]}\n\n"
+                last_len = len(log_buffer)
+            time.sleep(0.1)
+    return Response(event_stream(), mimetype="text/event-stream")
 
 if __name__ == '__main__':
     port = 5000

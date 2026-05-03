@@ -1,1 +1,0 @@
-Show file size, peer number and ETA in the active torrents tab.

@@ -73,8 +73,7 @@ document.addEventListener('DOMContentLoaded', function () {
             torrentListEl.innerHTML = `
             <div style="text-align: center; padding: 40px; color: var(--text-secondary); border: 2px dashed var(--border-color); border-radius: 8px;">
                 No active torrents
-            </div>
-        `;
+            </div>`;
             return;
         }
 
@@ -85,11 +84,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 item.classList.add('selected');
             }
 
-            // Click to select torrent
+            // Click anywhere on the row to select (but not on buttons)
             item.addEventListener('click', (e) => {
-                // Don't select if clicking a button
                 if (e.target.tagName === 'BUTTON') return;
-                
                 selectedTorrentId = torrent.id;
                 document.querySelectorAll('.torrent-item').forEach(i => i.classList.remove('selected'));
                 item.classList.add('selected');
@@ -105,10 +102,10 @@ document.addEventListener('DOMContentLoaded', function () {
             <div class="torrent-info">
                 <div class="name">${torrent.name}</div>
                 <div class="meta">
-                    ${torrent.status} • ${round(torrent.progress, 1)}% • ↓ ${torrent.downloadSpeed} • ↑ ${torrent.uploadSpeed}
+                    ${torrent.status} &bull; ${round(torrent.progress, 1)}% &bull; &#8595; ${torrent.downloadSpeed} &bull; &#8593; ${torrent.uploadSpeed}
                 </div>
                 <div class="meta" style="font-size: 0.8em; opacity: 0.8; margin-top: 2px;">
-                    Size: ${formatSize(torrent.totalSize)} • Peers: ${torrent.peerCount} • ETA: ${formatETA(torrent.eta)}
+                    Size: ${formatSize(torrent.totalSize)} &bull; Peers: ${torrent.peerCount} &bull; ETA: ${formatETA(torrent.eta)}
                 </div>
                 <div class="progress-bar">
                     <div class="progress-fill" style="width: ${torrent.progress}%"></div>
@@ -116,12 +113,23 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
             <div class="torrent-actions">
                 <button class="${actionBtnClass}" onclick="handleTorrentAction(${torrent.id}, '${action}')">${actionBtnText}</button>
-                <button class="secondary-btn remove-btn" onclick="handleTorrentAction(${torrent.id}, 'remove')">X</button>
-            </div>
-        `;
+                <button class="secondary-btn remove-btn" onclick="handleTorrentAction(${torrent.id}, 'remove')">Remove</button>
+            </div>`;
+
             torrentListEl.appendChild(item);
         });
     }
+
+    // Global helper so onclick attributes can open the Stats tab for a torrent
+    window.selectAndShowStats = function(torrentId) {
+        selectedTorrentId = torrentId;
+        document.querySelectorAll('.torrent-item').forEach(i => i.classList.remove('selected'));
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+        document.querySelector('[data-tab="statistics"]').classList.add('active');
+        document.getElementById('statistics-view').classList.add('active');
+        updateStatistics();
+    };
 
     // Event Listeners for File Selection
     if (selectFileBtn) {
@@ -515,7 +523,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function formatETA(seconds) {
-        if (seconds === -1) return '∞';
+        if (seconds < 0) return '∞';
         if (seconds === 0) return '0s';
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
@@ -526,7 +534,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function round(value, precision) {
-        var multiplier = Math.pow(10, precision || 0);
+        const multiplier = Math.pow(10, precision || 0);
         return Math.round(value * multiplier) / multiplier;
     }
 

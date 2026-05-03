@@ -56,6 +56,7 @@ class Peer:
         self.client = client
         self.is_not_listening = False
         self.uploaded = 0
+        self.downloaded = 0
         self.supports_extensions = False
         self.ut_metadata_id = None
         self.metadata_size = None
@@ -204,10 +205,14 @@ class Peer:
         try:
             import select
             from peer_handling import handle_response, request_piece_block
-            while True:
+            
+            messages_processed = 0
+            while messages_processed < 50:
                 readable, _, _ = select.select([self.sock], [], [], 0.002)  # 2ms tick
                 if not readable:
                     break
+                
+                messages_processed += 1
                 
                 response_data = recv_by_length(self.sock)
                 if response_data is False or response_data is None:

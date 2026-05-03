@@ -185,6 +185,7 @@ def handle_piece(sock, payload, pieces, peer, download_files):
     # Mark as received in our pieces manager
     pieces.add_received({'piece_index': piece_index, 'begin': begin})
     
+    peer.downloaded += len(block_data)
     peer.pending_requests -= 1
     if peer.pending_requests < 0:
         peer.pending_requests = 0

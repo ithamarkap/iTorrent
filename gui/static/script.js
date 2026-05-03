@@ -292,7 +292,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (torrent.progress >= 100 || torrent.status === 'Paused' || parseFloat(torrent.downloadSpeed) === 0) {
             document.getElementById('stat-eta').textContent = '∞';
         } else {
-            const speedBytes = parseFloat(torrent.downloadSpeed) * 1048576; // MB/s to B/s
+            let speedBytes = parseFloat(torrent.downloadSpeed);
+            if (torrent.downloadSpeed.includes('GB/s')) speedBytes *= 1073741824;
+            else if (torrent.downloadSpeed.includes('MB/s')) speedBytes *= 1048576;
+            else if (torrent.downloadSpeed.includes('KB/s')) speedBytes *= 1024;
+            
             const remainingBytes = (100 - torrent.progress) / 100 * torrent.totalSize;
             const etaSeconds = remainingBytes / speedBytes;
             document.getElementById('stat-eta').textContent = formatTime(etaSeconds);

@@ -270,6 +270,14 @@ class TorrentClient:
     def get_gui_data(self):
         progress = self.pieces.get_progress() if self.pieces else 0
         
+        def format_speed(speed_bytes):
+            if speed_bytes >= 1048576:
+                return f"{speed_bytes / 1048576:.2f} MB/s"
+            elif speed_bytes >= 1024:
+                return f"{speed_bytes / 1024:.2f} KB/s"
+            else:
+                return f"{speed_bytes:.0f} B/s"
+        
         # Calculate piece bitfield for the piece chart
         bitfield = []
         if self.pieces:
@@ -283,8 +291,8 @@ class TorrentClient:
             'name': self.name,
             'status': self.status,
             'progress': round(progress, 2),
-            'downloadSpeed': f"{self.download_speed / 1048576:.2f} MB/s",
-            'uploadSpeed': f"{self.upload_speed / 1048576:.2f} MB/s",
+            'downloadSpeed': format_speed(self.download_speed),
+            'uploadSpeed': format_speed(self.upload_speed),
             'totalDownloaded': self.session_downloaded,
             'totalUploaded': self.session_uploaded,
             'elapsedTime': int(elapsed_time),
@@ -339,7 +347,7 @@ class TorrentClient:
                         peer_obj.torrent_pieces = self.pieces
                         peer_obj.torrent_download_files = self.download_files
                         # Verify info_hash matches what we are hosting
-                        if peer_obj.info_hash != self.info_hash:
+                        if peer_obj.torrent_info_hash != self.info_hash:
                             print(f"Info hash mismatch from {addr}")
                             continue
                         self.connected_peers.append(peer_obj)
@@ -356,7 +364,6 @@ class TorrentClient:
         import time
         from peer_handling import pack_message, MessageID
         last_time = time.time()
-        last_downloaded = 0
         has_announced_completed = False
         last_choke_time = 0
         
@@ -385,9 +392,8 @@ class TorrentClient:
                 
             if not self.pieces:
                 self.status = 'Fetching Metadata'
-            elif last_downloaded == 0 and self.pieces:
-                # Pieces just became available - reset timing so first speed sample is accurate
-                last_downloaded = sum(sum(1 for b in p if b) for p in self.pieces.received) * 16384
+            elif getattr(self, '_metadata_just_fetched', True) and self.pieces:
+                self._metadata_just_fetched = False
                 last_time = time.time()
                 
             if getattr(self, 'peer_list_timer', 0) <= time.time():
@@ -417,23 +423,25 @@ class TorrentClient:
             elapsed = current_time - last_time
             if elapsed >= 1.0:
                 if self.pieces:
-                    if self.status == 'Seeding':
-                        current_downloaded = self.total_size
-                    else:
-                        current_downloaded = sum(sum(1 for b in p if b) for p in self.pieces.received) * 16384
-                    
-                    delta = current_downloaded - last_downloaded
-                    self.download_speed = max(0, delta / elapsed)
-                    if delta > 0:
-                        self.session_downloaded += delta
-                    last_downloaded = current_downloaded
-                    
+                    current_downloaded_tick = 0
                     current_uploaded_tick = 0
                     for p in self.connected_peers:
+                        if hasattr(p, 'downloaded'):
+                            current_downloaded_tick += p.downloaded
+                            p.downloaded = 0
                         if hasattr(p, 'uploaded'):
                             current_uploaded_tick += p.uploaded
                             p.uploaded = 0
-                            
+                    
+                    self.download_speed = current_downloaded_tick / elapsed
+                    self.session_downloaded += current_downloaded_tick
+                    
+                    try:
+                        with open("speed_debug.log", "a") as f:
+                            f.write(f"Elapsed: {elapsed:.2f}, Downloaded_tick: {current_downloaded_tick}, Connected peers: {len(self.connected_peers)}, Download Speed: {self.download_speed:.2f}\n")
+                    except Exception:
+                        pass
+                    
                     self.upload_speed = current_uploaded_tick / elapsed
                     self.session_uploaded += current_uploaded_tick
                     self.total_uploaded = getattr(self, 'total_uploaded', 0) + current_uploaded_tick

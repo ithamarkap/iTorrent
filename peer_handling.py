@@ -158,9 +158,9 @@ def request_piece_block(sock, pieces, peer):
             pass
         return
 
-    # Endgame: refill queue with every unreceived block
-    if peer.empty() and not pieces.is_done():
-        for piece_idx in range(pieces.piece_amount):
+    # Endgame: refill queue with unreceived blocks ONLY from pieces this peer has
+    if peer.empty() and not pieces.is_done() and pieces._unrequested_count <= 0:
+        for piece_idx in peer.available_pieces:
             piece_size = pieces.determine_piece_size(piece_idx)
             for block_idx, received in enumerate(pieces.received[piece_idx]):
                 if not received:
@@ -170,14 +170,16 @@ def request_piece_block(sock, pieces, peer):
                         peer.queue.append({'piece_index': piece_idx, 'begin': begin, 'length': length})
 
     MAX_PIPELINE = 200
-    while not peer.empty() and peer.pending_requests < MAX_PIPELINE:
+    requests_made = 0
+    while not peer.empty() and peer.pending_requests < MAX_PIPELINE and requests_made < 50:
         piece_block = peer.pop()
-        b_idx = piece_block['begin'] // BLOCK_SIZE
-        if not pieces.received[piece_block['piece_index']][b_idx]:
+        
+        if pieces.needed(piece_block):
             try:
                 sock.send(pack_request(piece_block['piece_index'], piece_block['begin'], piece_block['length']))
                 pieces.add_request(piece_block)
                 peer.pending_requests += 1
+                requests_made += 1
             except Exception:
                 peer.queue.insert(0, piece_block)
                 break

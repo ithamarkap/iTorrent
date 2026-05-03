@@ -58,6 +58,7 @@ class Peer:
         'torrent_download_files', 'torrent_info_hash', 'torrent_peer_id',
         'client', 'uploaded', 'downloaded', 'supports_extensions',
         'ut_metadata_id', 'metadata_size', 'peer_interested', 'am_choking',
+        'available_pieces'
     )
 
     def __init__(self, peer, info_hash, peer_id, pieces=None, piece_size=0,
@@ -82,6 +83,7 @@ class Peer:
         self.metadata_size = None
         self.peer_interested = False
         self.am_choking = True
+        self.available_pieces = set()
 
     # ── Queue helpers ─────────────────────────────────────────────────────────
 
@@ -92,6 +94,10 @@ class Peer:
         return self.queue.pop(index)
 
     def add_piece_blocks(self, piece_index):
+        if piece_index in self.available_pieces:
+            return
+        self.available_pieces.add(piece_index)
+        
         piece_sz = self.determine_piece_size(piece_index)
         num_full = piece_sz // BLOCK_SIZE
         for i in range(num_full):

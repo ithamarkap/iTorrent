@@ -475,7 +475,7 @@ class TorrentClient:
             if peer_obj.connect():
                 if len(self.connected_peers) < self.MAX_PEER_CONNECTIONS:
                     self.connected_peers.append(peer_obj)
-                    if self.piece_manager:
+                    if getattr(self, 'piece_manager', None):
                         self.piece_manager.add_seeder(peer_obj.peer)
             else:
                 try:
@@ -484,37 +484,52 @@ class TorrentClient:
                     pass
 
         batch = candidates[:min(30, len(candidates))]
-        threads = [threading.Thread(target=try_connect, args=(a,), daemon=True) for a in batch]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        # Use our persistent thread pool to avoid thread creation overhead
+        if not hasattr(self, '_connect_executor'):
+            import concurrent.futures
+            self._connect_executor = concurrent.futures.ThreadPoolExecutor(max_workers=30)
+            
+        # Fire and forget — don't block the main loop waiting for 3-second connect timeouts!
+        for addr in batch:
+            self._connect_executor.submit(try_connect, addr)
 
     def _communicate_peers(self):
         peers = self.connected_peers.copy()
         if not peers:
             return
 
+        if not hasattr(self, '_comm_executor'):
+            import concurrent.futures
+            self._comm_executor = concurrent.futures.ThreadPoolExecutor(max_workers=128)
+            self._active_tasks = set()
+
         def _comm(peer):
             try:
-                return None if peer.communicate() else peer
+                return peer if not peer.communicate() else None
             except Exception:
                 return peer
 
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(128, max(1, len(peers)))
-        ) as executor:
-            to_remove = list(executor.map(_comm, peers))
+        def _on_done(future):
+            peer = getattr(future, '_peer', None)
+            if peer:
+                self._active_tasks.discard(peer)
+            bad = future.result()
+            if bad:
+                try:
+                    self.connected_peers.remove(bad)
+                except ValueError:
+                    pass
+                try:
+                    self.peer_list.remove(bad.peer)
+                except ValueError:
+                    pass
 
-        for bad in filter(None, to_remove):
-            try:
-                self.connected_peers.remove(bad)
-            except ValueError:
-                pass
-            try:
-                self.peer_list.remove(bad.peer)
-            except ValueError:
-                pass
+        for peer in peers:
+            if peer not in self._active_tasks:
+                self._active_tasks.add(peer)
+                future = self._comm_executor.submit(_comm, peer)
+                future._peer = peer
+                future.add_done_callback(_on_done)
 
     # ── Deletion ──────────────────────────────────────────────────────────────
 

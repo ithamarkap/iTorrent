@@ -15,6 +15,7 @@ class Pieces:
         self.requested = []
         self.received = []
         self._received_count = 0  # Cached count for O(1) progress/done checks
+        self._unrequested_count = 0 # Cached count for O(1) endgame check
 
         self._setup_lists_by_blocks()
 
@@ -26,6 +27,7 @@ class Pieces:
             self.requested.append([False] * number_of_blocks)
             self.received.append([False] * number_of_blocks)
             self.blocks_amount += number_of_blocks
+        self._unrequested_count = self.blocks_amount
 
     def determine_piece_size(self, piece_index):
         if piece_index == self.piece_amount - 1:
@@ -38,6 +40,7 @@ class Pieces:
         b_idx = piece_block['begin'] // BLOCK_SIZE
         if not self.requested[idx][b_idx]:
             self.requested[idx][b_idx] = True
+            self._unrequested_count -= 1
 
     def add_received(self, piece_block):
         idx = piece_block['piece_index']
@@ -45,17 +48,22 @@ class Pieces:
         if not self.received[idx][b_idx]:
             self.received[idx][b_idx] = True
             self._received_count += 1
+            if not self.requested[idx][b_idx]:
+                self.requested[idx][b_idx] = True
+                self._unrequested_count -= 1
 
     def needed(self, piece_block):
         idx = piece_block['piece_index']
         b_idx = piece_block['begin'] // BLOCK_SIZE
 
-        # Endgame: if all blocks have been requested, reset requested to match received
-        if all(self.requested[i][j] for i in range(self.piece_amount) for j in range(len(self.requested[i]))):
-            for i in range(self.piece_amount):
-                self.requested[i] = self.received[i][:]
-
-        return not self.requested[idx][b_idx]
+        if self.received[idx][b_idx]:
+            return False
+            
+        if not self.requested[idx][b_idx]:
+            return True
+            
+        # If requested but not received, it's only 'needed' if we're in endgame mode
+        return self._unrequested_count <= 0
 
     def get_progress(self):
         if self.blocks_amount == 0:

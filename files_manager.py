@@ -1,6 +1,6 @@
 import os
 from hashlib import sha1
-
+import threading
 
 class Files:
     def __init__(self, piece_size, pieces_hash, files, relative_directory):
@@ -10,6 +10,8 @@ class Files:
         self.relative_directory = relative_directory
         self.file_map = []
         self._total_size = 0
+        self._lock = threading.Lock()
+        self._file_handles = {}
         self._setup_file_map()
 
     def _setup_file_map(self):
@@ -74,18 +76,22 @@ class Files:
             if data_offset >= bytes_to_write:
                 break
 
+    def _get_file_handle(self, file_path):
+        if file_path not in self._file_handles:
+            try:
+                self._file_handles[file_path] = open(file_path, 'r+b')
+            except Exception:
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                with open(file_path, 'ab'):
+                    pass
+                self._file_handles[file_path] = open(file_path, 'r+b')
+        return self._file_handles[file_path]
+
     def _write_to_file(self, file_path: str, position: int, data: bytes):
-        try:
-            with open(file_path, 'r+b') as f:
-                f.seek(position)
-                f.write(data)
-        except Exception:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'ab'):
-                pass
-            with open(file_path, 'r+b') as f:
-                f.seek(position)
-                f.write(data)
+        with self._lock:
+            f = self._get_file_handle(file_path)
+            f.seek(position)
+            f.write(data)
 
     def _read(self, global_offset: int, length: int) -> bytes:
         data = bytearray()
@@ -96,12 +102,15 @@ class Files:
                 continue
             file_pos = global_offset - f_info['start']
             read_amount = min(length - bytes_read, f_info['length'] - file_pos)
-            try:
-                with open(f_info['path'], 'rb') as f:
+            
+            with self._lock:
+                try:
+                    f = self._get_file_handle(f_info['path'])
                     f.seek(file_pos)
                     data.extend(f.read(read_amount))
-            except Exception:
-                data.extend(b'\x00' * read_amount)
+                except Exception:
+                    data.extend(b'\x00' * read_amount)
+            
             bytes_read += read_amount
             global_offset += read_amount
             if bytes_read >= length:
@@ -112,6 +121,14 @@ class Files:
     def delete_files(self) -> bool:
         import shutil
         try:
+            with self._lock:
+                for file_path, f in self._file_handles.items():
+                    try:
+                        f.close()
+                    except Exception:
+                        pass
+                self._file_handles.clear()
+
             for f_info in self.file_map:
                 if os.path.exists(f_info['path']):
                     os.remove(f_info['path'])

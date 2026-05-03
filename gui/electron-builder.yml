@@ -14,5 +14,4 @@ extraResources:
     filter: ["**/*"]
 win:
   target: "portable"
-  icon: "icon.ico" 
-  # Note: icon.ico is not present, build might warn or use default.
+  icon: "icon.ico"

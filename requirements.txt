@@ -1,0 +1,4 @@
+bencodepy
+flask
+python-dotenv
+

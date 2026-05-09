@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', function () {
     fetchLogs();
     setupLogStream();
     fetchUpnpStatus();
+    fetchConfig();
 
     // Poll for updates (in a real app, use WebSockets or SSE)
     setInterval(fetchTorrents, 1000);
@@ -109,6 +110,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.error('UPnP toggle failed:', e);
             }
         });
+    }
+
+
+    async function fetchConfig() {
+        try {
+            const response = await fetch('/api/config');
+            const data = await response.json();
+            if (data.defaultDownloadDir) {
+                downloadPathEl.textContent = data.defaultDownloadDir;
+            }
+        } catch (error) {
+            console.error('Error fetching config:', error);
+        }
     }
 
 

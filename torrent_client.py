@@ -8,8 +8,22 @@ import bencodepy
 import socket
 import logging
 from pathlib import Path
+import winreg
 
 logger = logging.getLogger('TorrentClient')
+
+
+def get_default_download_path():
+    """Returns the user's default downloads path on Windows."""
+    try:
+        sub_key = r'Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders'
+        downloads_guid = '{374DE290-123F-4565-9164-39C4925E467B}'
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub_key) as key:
+            location, _ = winreg.QueryValueEx(key, downloads_guid)
+        return os.path.expandvars(location)
+    except Exception as e:
+        logger.warning(f"Failed to get system downloads folder, falling back to project Downloads: {e}")
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "Downloads")
 
 
 class TorrentClass:
@@ -117,7 +131,7 @@ class TorrentClient:
             self.Error = True
             return
 
-        self.relative_directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Downloads")
+        self.relative_directory = get_default_download_path()
         self.files = getattr(self.parsed_torrent, 'files', [])
         self.download_files = None
         self.pieces = None

@@ -440,12 +440,18 @@ class TorrentClient:
                                     except Exception:
                                         pass
                             else:
-                                logger.warning(f"Piece {i} failed hash check -- resetting.")
+                                # If this happens, the GUI piece chart will flip from downloaded -> missing
+                                logger.warning(
+                                    f"Piece {i} failed hash check; resetting blocks. "
+                                    f"total_size={getattr(self, 'total_size', None)} piece_size={getattr(self, 'piece_size', None)} "
+                                    f"blocks={len(self.pieces.received[i])} received_count={self.pieces._received_count}"
+                                )
                                 for block_idx in range(len(self.pieces.received[i])):
                                     if self.pieces.received[i][block_idx]:
                                         self.pieces.received[i][block_idx] = False
                                         self.pieces._received_count -= 1
                                     self.pieces.requested[i][block_idx] = False
+
                 else:
                     self.download_speed = 0
                     self.upload_speed = 0

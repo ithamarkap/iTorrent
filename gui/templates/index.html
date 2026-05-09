@@ -12,8 +12,9 @@
     <div id="root">
         <header>
             <h1>iTorrent</h1>
-            <div style="display: flex; align-items: center; gap: 15px;">
+        <div style="display: flex; align-items: center; gap: 15px;">
                 <button id="theme-toggle" class="secondary-btn" style="width: auto; margin: 0;">🌙</button>
+                <div id="upnp-badge" class="upnp-badge upnp-searching" title="UPnP port forwarding status">UPnP …</div>
                 <div class="status">Online</div>
             </div>
         </header>
@@ -93,6 +94,17 @@
                         <label>Upload Speed Limit (KB/s):</label>
                         <input type="number" value="0" placeholder="0 for unlimited">
                         <small>0 = Unlimited</small>
+                    </div>
+                    <div class="form-group upnp-toggle-row">
+                        <label for="upnp-toggle">UPnP Port Forwarding:</label>
+                        <div class="toggle-wrap">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="upnp-toggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span id="upnp-toggle-label" class="toggle-label">Enabled</span>
+                        </div>
+                        <small>Automatically forwards port <span id="upnp-port">6881</span> on your router so peers can connect for seeding.</small>
                     </div>
                 </div>
             </aside>

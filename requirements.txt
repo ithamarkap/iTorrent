@@ -1,4 +1,6 @@
 bencodepy
 flask
 python-dotenv
+miniupnpc
+upnpy
 

@@ -5,7 +5,12 @@ import socket
 import random
 import logging
 import time
+import io
 from collections import deque
+
+# Force UTF-8 encoding for stdout/stderr to prevent encoding issues on Windows
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # ── Logging setup (must happen before any other import) ───────────────────────
 
@@ -26,7 +31,8 @@ class _StreamRedirector:
         self._stream.flush()
 
 logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    encoding='utf-8')
 _handler = _LogCaptureHandler()
 _handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logging.getLogger().addHandler(_handler)
@@ -52,6 +58,26 @@ if _parent not in sys.path:
 
 from torrent_client import TorrentClient, parse_torrent_file, parse_magnet_link
 from get_peer_list import TrackerClass
+
+# ── UPnP ─────────────────────────────────────────────────────────────────────
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from upnp_manager import upnp_manager
+
+# Find the first available listen port and set up UPnP immediately on startup.
+_LISTEN_PORT = 6881
+for _p in range(6881, 6890):
+    try:
+        _probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        _probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        _probe.bind(('0.0.0.0', _p))
+        _probe.close()
+        _LISTEN_PORT = _p
+        break
+    except OSError:
+        pass
+
+upnp_manager.setup(_LISTEN_PORT)
 
 active_torrents = []
 
@@ -163,6 +189,18 @@ def get_peers():
 @app.route('/api/settings', methods=['POST'])
 def update_settings():
     return jsonify({'success': True})
+
+
+@app.route('/api/upnp', methods=['GET', 'POST'])
+def upnp_endpoint():
+    if request.method == 'GET':
+        return jsonify(upnp_manager.get_status())
+
+    # POST — toggle enable/disable
+    data = request.json or {}
+    enabled = data.get('enabled', True)
+    upnp_manager.set_enabled(bool(enabled), _LISTEN_PORT)
+    return jsonify({'success': True, **upnp_manager.get_status()})
 
 
 @app.route('/api/logs', methods=['GET'])

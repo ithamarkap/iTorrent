@@ -539,4 +539,110 @@ code {
     display: flex;
     justify-content: flex-end;
 }
+
+/* ── UPnP badge ──────────────────────────────────────────────────────────── */
+.upnp-badge {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    transition: background-color 0.4s, color 0.4s;
+}
+
+.upnp-badge.upnp-searching {
+    background-color: rgba(160, 160, 160, 0.15);
+    color: var(--text-secondary);
+    animation: upnp-pulse 1.4s ease-in-out infinite;
+}
+
+.upnp-badge.upnp-active {
+    background-color: rgba(3, 218, 198, 0.15);
+    color: var(--success-color);
+    border: 1px solid rgba(3, 218, 198, 0.3);
+}
+
+.upnp-badge.upnp-inactive {
+    background-color: rgba(207, 102, 121, 0.15);
+    color: var(--error-color);
+}
+
+.upnp-badge.upnp-off {
+    background-color: rgba(160, 160, 160, 0.1);
+    color: var(--text-secondary);
+}
+
+@keyframes upnp-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+}
+
+/* ── Toggle switch (iOS style) ───────────────────────────────────────────── */
+.upnp-toggle-row {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+}
+
+.toggle-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+    position: absolute;
+}
+
+.toggle-slider {
+    position: absolute;
+    inset: 0;
+    background-color: var(--bg-tertiary);
+    border-radius: 24px;
+    cursor: pointer;
+    transition: background-color 0.25s;
+    border: 1px solid var(--border-color);
+}
+
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: var(--text-secondary);
+    border-radius: 50%;
+    transition: transform 0.25s, background-color 0.25s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: rgba(3, 218, 198, 0.25);
+    border-color: var(--success-color);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(18px) translateY(-50%);
+    background-color: var(--success-color);
+}
+
+.toggle-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
 

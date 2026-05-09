@@ -49,9 +49,68 @@ document.addEventListener('DOMContentLoaded', function () {
     fetchTorrents();
     fetchLogs();
     setupLogStream();
+    fetchUpnpStatus();
 
     // Poll for updates (in a real app, use WebSockets or SSE)
     setInterval(fetchTorrents, 1000);
+    setInterval(fetchUpnpStatus, 3000);
+
+    // ── UPnP status badge & toggle ────────────────────────────────────────────
+
+    async function fetchUpnpStatus() {
+        try {
+            const res  = await fetch('/api/upnp');
+            const data = await res.json();
+            updateUpnpBadge(data);
+        } catch (_) { /* server not ready yet */ }
+    }
+
+    function updateUpnpBadge(data) {
+        const badge       = document.getElementById('upnp-badge');
+        const toggleEl    = document.getElementById('upnp-toggle');
+        const toggleLabel = document.getElementById('upnp-toggle-label');
+        const portSpan    = document.getElementById('upnp-port');
+
+        if (!badge) return;
+
+        // Sync checkbox without firing the change event
+        if (toggleEl) toggleEl.checked = data.enabled;
+        if (toggleLabel) toggleLabel.textContent = data.enabled ? 'Enabled' : 'Disabled';
+        if (portSpan && data.port) portSpan.textContent = data.port;
+
+        badge.classList.remove('upnp-searching', 'upnp-active', 'upnp-inactive', 'upnp-off');
+
+        if (!data.enabled) {
+            badge.textContent = 'UPnP Off';
+            badge.classList.add('upnp-off');
+        } else if (data.active) {
+            const ip = data.externalIp ? ` ${data.externalIp}:${data.port}` : `:${data.port}`;
+            badge.textContent = `UPnP ✓${ip}`;
+            badge.classList.add('upnp-active');
+        } else {
+            badge.textContent = 'UPnP …';
+            badge.classList.add('upnp-searching');
+        }
+    }
+
+    const upnpToggle = document.getElementById('upnp-toggle');
+    if (upnpToggle) {
+        upnpToggle.addEventListener('change', async () => {
+            const enabled = upnpToggle.checked;
+            try {
+                const res  = await fetch('/api/upnp', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ enabled }),
+                });
+                const data = await res.json();
+                updateUpnpBadge(data);
+            } catch (e) {
+                console.error('UPnP toggle failed:', e);
+            }
+        });
+    }
+
 
     async function fetchTorrents() {
         try {

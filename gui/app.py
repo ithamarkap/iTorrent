@@ -68,19 +68,13 @@ from get_peer_list import TrackerClass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from upnp_manager import upnp_manager
+from network_engine import network_engine
 
-# Find the first available listen port and set up UPnP immediately on startup.
-_LISTEN_PORT = 6881
-for _p in range(6881, 6890):
-    try:
-        _probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        _probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        _probe.bind(('0.0.0.0', _p))
-        _probe.close()
-        _LISTEN_PORT = _p
-        break
-    except OSError:
-        pass
+# Start the shared NetworkEngine and obtain the actual bound port.
+_LISTEN_PORT = network_engine.start(6881)
+if not _LISTEN_PORT:
+    # Fallback if binding fails completely
+    _LISTEN_PORT = 6881
 
 upnp_manager.setup(_LISTEN_PORT)
 atexit.register(upnp_manager.teardown)
@@ -239,6 +233,7 @@ def stream_logs():
 @app.route('/api/shutdown', methods=['POST'])
 def shutdown():
     logger.info('Shutdown requested via API -- cleaning up.')
+    network_engine.stop()
     upnp_manager.teardown()
     # Exit in a separate thread so we can return the response first
     threading.Thread(target=lambda: (time.sleep(0.5), os._exit(0))).start()

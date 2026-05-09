@@ -190,6 +190,10 @@ class TorrentClient:
                 peer.total_size = self.total_size
                 peer.torrent_pieces = self.pieces
                 peer.torrent_download_files = self.download_files
+                
+            if self.pieces and self.pieces.is_done():
+                self.status = 'Seeding'
+                self.broadcast_bitfield()
 
         except Exception as e:
             logger.error(f"Failed to install metadata: {e}")
@@ -282,44 +286,46 @@ class TorrentClient:
         if self.Error:
             return
         self.is_downloading = True
-        self.status = 'Downloading'
-        self._setup_listener()
+        if self.pieces and self.pieces.is_done():
+            self.status = 'Seeding'
+        else:
+            self.status = 'Downloading'
+            
+        # Register with the shared NetworkEngine
+        from network_engine import network_engine
+        network_engine.register(self.info_hash, self)
+        self.listen_port = network_engine.port
+        
         self.thread = threading.Thread(target=self._download_loop, daemon=True)
         self.thread.start()
+        
+        if self.status == 'Seeding':
+            self.broadcast_bitfield()
 
-    def _setup_listener(self):
-        self.listen_port = 6881
-        self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        for port in range(6881, 6890):
+    def broadcast_bitfield(self):
+        """Send a full Bitfield message to all connected peers to signal completion."""
+        from peer_handling import pack_bitfield
+        if not self.pieces or self.piece_amount <= 0:
+            return
+            
+        bitfield = bytearray((self.piece_amount + 7) // 8)
+        for i in range(self.piece_amount):
+            if all(self.pieces.received[i]):
+                bitfield[i // 8] |= (1 << (7 - (i % 8)))
+        
+        bf_msg = pack_bitfield(bytes(bitfield))
+        for p in self.connected_peers:
             try:
-                self.server_sock.bind(('0.0.0.0', port))
-                self.listen_port = port
-                break
+                if p.sock:
+                    p.sock.send(bf_msg)
             except Exception:
-                continue
-        self.server_sock.listen(5)
-        self.server_sock.settimeout(1)
+                pass
 
-        def accept_clients():
-            from peer_manager import Peer
-            while self.is_downloading:
-                try:
-                    client, addr = self.server_sock.accept()
-                    peer_obj = Peer(addr, self.info_hash, self.peer_id,
-                                    pieces=self.pieces, piece_size=self.piece_size,
-                                    piece_amount=self.piece_amount, total_size=self.total_size,
-                                    download_files=self.download_files, client=self)
-                    if peer_obj.accept_connection(client):
-                        peer_obj.torrent_pieces = self.pieces
-                        peer_obj.torrent_download_files = self.download_files
-                        self.connected_peers.append(peer_obj)
-                        logger.info(f"Accepted incoming connection from {addr}")
-                except socket.timeout:
-                    pass
-                except Exception:
-                    break
-
-        threading.Thread(target=accept_clients, daemon=True).start()
+    def stop(self):
+        self.is_downloading = False
+        from network_engine import network_engine
+        network_engine.unregister(self.info_hash)
+        self.status = 'Paused'
 
     def _download_loop(self):
         from peer_handling import pack_message, MessageID, pack_bitfield, pack_have
@@ -339,17 +345,7 @@ class TorrentClient:
                 if not has_announced_completed:
                     self._get_peer_list(event=1)
                     has_announced_completed = True
-                # Broadcast full bitfield once
-                bitfield = bytearray((self.piece_amount + 7) // 8)
-                for i in range(self.piece_amount):
-                    bitfield[i // 8] |= (1 << (7 - (i % 8)))
-                bf_msg = pack_bitfield(bytes(bitfield))
-                for p in self.connected_peers:
-                    try:
-                        if p.sock:
-                            p.sock.send(bf_msg)
-                    except Exception:
-                        pass
+                self.broadcast_bitfield()
 
             if not self.pieces:
                 self.status = 'Fetching Metadata'

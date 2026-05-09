@@ -150,12 +150,16 @@ class Peer:
                 logger.warning(f"Connection failed to {self.peer}: {e}")
             return False
 
-    def accept_connection(self, client_sock) -> bool:
+    def accept_connection(self, client_sock, handshake_data=None) -> bool:
         try:
             self.sock = client_sock
             self.sock.settimeout(3)
 
-            response = recv_handshake(self.sock, 68)
+            if handshake_data:
+                response = handshake_data
+            else:
+                response = recv_handshake(self.sock, 68)
+
             if not response or not is_handshake(response):
                 logger.error(f"Invalid handshake from incoming peer {self.peer}")
                 return False

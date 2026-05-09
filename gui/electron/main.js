@@ -19,13 +19,32 @@ function startFlask() {
         // api.exe is placed in resources/api/dist/api/api.exe or similar depending on pyinstaller
         // Based on build_windows.bat: distpath gui/resources -> gui/resources/api.exe
         // Electron builder extraResources: resources/api -> api
-        // So final path: contents/resources/api/api.exe
-        scriptPath = path.join(process.resourcesPath, 'api', 'api.exe');
+        // Expected final path (based on electron-builder extraResources):
+        //   <resourcesPath>/api/api.exe
+        // Add fallbacks because some builds may flatten the folder one level.
+        const candidatePaths = [
+            path.join(process.resourcesPath, 'api', 'api.exe'),
+            path.join(process.resourcesPath, 'api.exe'),
+            path.join(process.resourcesPath, 'api', 'dist', 'api.exe'),
+        ];
+
+        scriptPath = candidatePaths.find(p => {
+            try {
+                const fs = require('fs');
+                return fs.existsSync(p);
+            } catch (_) {
+                return false;
+            }
+        }) || candidatePaths[0];
+
         console.log(`Starting Packaged Flask from: ${scriptPath}`);
 
-        flaskProcess = spawn(scriptPath, [], {
-            stdio: 'inherit'
-        });
+        try {
+            flaskProcess = spawn(scriptPath, [], { stdio: 'inherit' });
+        } catch (e) {
+            console.error('Failed to spawn backend exe:', e);
+        }
+
     } else {
         // In development, run python script
         scriptPath = path.join(__dirname, '../app.py');

@@ -12,6 +12,16 @@ extraResources:
   - from: "resources/api"
     to: "api"
     filter: ["**/*"]
+  # Some packagers place backend exe at resources/api.exe instead of resources/api/api.exe
+  - from: "resources/api"
+    to: "api.exe"
+    filter: ["api.exe"]
 win:
   target: "portable"
   icon: "icon.ico"
+  signAndEditExecutable: false
+
+
+
+
+

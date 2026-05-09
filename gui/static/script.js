@@ -378,7 +378,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         renderPieceChart(torrent.bitfield);
+        renderPieceSourceTable(torrent.pieceSources, torrent.pieceAmount);
     }
+
 
     function renderPieceChart(bitfield) {
         const chart = document.getElementById('piece-chart');
@@ -413,6 +415,38 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
     }
+
+    function renderPieceSourceTable(pieceSources, pieceAmount) {
+        const tbody = document.getElementById('piece-source-table-body');
+        if (!tbody) return;
+
+        if (!pieceSources || pieceSources.length === 0) {
+            tbody.innerHTML = '';
+            return;
+        }
+
+        const count = pieceAmount || pieceSources.length;
+        if (tbody.rows.length !== count) {
+            tbody.innerHTML = '';
+            const fragment = document.createDocumentFragment();
+            for (let i = 0; i < count; i++) {
+                const tr = document.createElement('tr');
+                const src = pieceSources[i];
+                const sourceText = src && src.ip ? `${src.ip}:${src.port ?? ''}` : 'Unknown';
+                tr.innerHTML = `<td>${i}</td><td>${sourceText}</td>`;
+                fragment.appendChild(tr);
+            }
+            tbody.appendChild(fragment);
+        } else {
+            // update existing rows
+            for (let i = 0; i < count; i++) {
+                const src = pieceSources[i];
+                const sourceText = src && src.ip ? `${src.ip}:${src.port ?? ''}` : 'Unknown';
+                tbody.rows[i].cells[1].textContent = sourceText;
+            }
+        }
+    }
+
 
     function formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';

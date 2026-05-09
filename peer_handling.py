@@ -137,6 +137,14 @@ def handle_piece(sock, payload, pieces, peer, download_files):
     download_files.write(piece_index, begin, block_data)
     pieces.add_received({'piece_index': piece_index, 'begin': begin})
 
+    # Track source peer for this piece (best-effort per-block; aggregated in GUI)
+    try:
+        if getattr(peer, 'client', None) and getattr(peer.client, 'record_piece_source', None):
+            ip, port = peer.peer if peer.peer else (None, None)
+            peer.client.record_piece_source(piece_index, ip, port)
+    except Exception:
+        pass
+
     peer.downloaded += len(block_data)
     peer.pending_requests = max(0, peer.pending_requests - 1)
     
@@ -147,6 +155,7 @@ def handle_piece(sock, payload, pieces, peer, download_files):
                               if not (r['piece_index'] == piece_index and r['begin'] == begin)]
 
     request_piece_block(sock, pieces, peer)
+
 
 
 def request_piece_block(sock, pieces, peer):

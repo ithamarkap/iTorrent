@@ -183,6 +183,25 @@
                             <div class="legend-item"><span class="box downloaded"></span> Downloaded</div>
                             <div class="legend-item"><span class="box missing"></span> Missing</div>
                         </div>
+
+                        <h3>Piece Sources (IP)</h3>
+                        <div id="piece-source-container" style="margin-top: 12px;">
+                            <div style="color: var(--text-secondary); font-size: 14px; margin-bottom: 10px;">
+                                Shows the latest peer IP:port that supplied each piece (updated as blocks arrive)
+                            </div>
+                            <div id="piece-source-table-wrap" style="max-height: 280px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+                                <table class="peer-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Piece #</th>
+                                            <th>Source</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="piece-source-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
 

@@ -90,6 +90,7 @@ class TorrentClient:
     MAX_PEER_CONNECTIONS = 200
 
     def __init__(self, torrent_path=None, magnet_url=None):
+
         self.torrent_path = torrent_path
         self.magnet_url = magnet_url
         self.peer_id = os.urandom(20)
@@ -135,6 +136,11 @@ class TorrentClient:
         self.status = 'Paused'
 
         self.metadata_buffer = {}
+
+        # piece_index -> { 'ip': str|None, 'port': int|None }
+        # Best-effort updated whenever a PIECE block is received.
+        self.piece_sources = {}
+
 
         if self.piece_amount > 0 and not self._setup_pieces():
             self.Error = True
@@ -244,8 +250,25 @@ class TorrentClient:
 
     # ── GUI Data ──────────────────────────────────────────────────────────────
 
+    def record_piece_source(self, piece_index: int, ip: str | None, port: int | None):
+        """Best-effort tracking of which remote peer supplied a piece (per-block).
+
+        Called from peer_handling.handle_piece() when a PIECE block is received.
+        """
+        try:
+            if piece_index is None:
+                return
+            # Only keep latest source for that piece.
+            self.piece_sources[int(piece_index)] = {
+                'ip': ip,
+                'port': port,
+            }
+        except Exception:
+            pass
+
     def get_gui_data(self) -> dict:
         progress = self.pieces.get_progress() if self.pieces else 0
+
 
         def format_speed(b):
             if b >= 1_048_576:
@@ -262,6 +285,16 @@ class TorrentClient:
         remaining = self.total_size * (1 - progress / 100)
         eta = int(remaining / self.download_speed) if self.download_speed > 0 else -1
 
+        # GUI-friendly aggregation: per-piece latest source ip:port
+        piece_sources = []
+        if self.piece_amount > 0:
+            for i in range(self.piece_amount):
+                src = self.piece_sources.get(i)
+                if not src or src.get('ip') is None:
+                    piece_sources.append(None)
+                else:
+                    piece_sources.append({'ip': src.get('ip'), 'port': src.get('port')})
+
         return {
             'id': id(self),
             'name': self.name,
@@ -275,10 +308,12 @@ class TorrentClient:
             'peerCount': len(self.connected_peers),
             'bitfield': bitfield,
             'pieceAmount': self.piece_amount,
+            'pieceSources': piece_sources,
             'totalSize': self.total_size,
             'eta': eta,
             'infoHash': self.info_hash.hex(),
         }
+
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 

@@ -42,6 +42,14 @@ class Pieces:
             self.requested[idx][b_idx] = True
             self._unrequested_count -= 1
 
+    def remove_request(self, piece_block):
+        """Allows reclaiming a block if a peer disconnects without sending it."""
+        idx = piece_block['piece_index']
+        b_idx = piece_block['begin'] // BLOCK_SIZE
+        if self.requested[idx][b_idx] and not self.received[idx][b_idx]:
+            self.requested[idx][b_idx] = False
+            self._unrequested_count += 1
+
     def add_received(self, piece_block):
         idx = piece_block['piece_index']
         b_idx = piece_block['begin'] // BLOCK_SIZE

@@ -58,7 +58,7 @@ class Peer:
         'torrent_download_files', 'torrent_info_hash', 'torrent_peer_id',
         'client', 'uploaded', 'downloaded', 'supports_extensions',
         'ut_metadata_id', 'metadata_size', 'peer_interested', 'am_choking',
-        'available_pieces'
+        'available_pieces', 'in_flight_requests', 'last_action_time'
     )
 
     def __init__(self, peer, info_hash, peer_id, pieces=None, piece_size=0,
@@ -84,6 +84,9 @@ class Peer:
         self.peer_interested = False
         self.am_choking = True
         self.available_pieces = set()
+        self.in_flight_requests = []
+        import time as _time
+        self.last_action_time = _time.time()
 
     # ── Queue helpers ─────────────────────────────────────────────────────────
 
@@ -190,6 +193,13 @@ class Peer:
             except Exception:
                 pass
             self.sock = None
+        
+        # Reclaim orphaned requests
+        if self.in_flight_requests and self.torrent_pieces:
+            for block in self.in_flight_requests:
+                self.torrent_pieces.remove_request(block)
+            self.in_flight_requests = []
+            self.pending_requests = 0
 
     # ── Communication ─────────────────────────────────────────────────────────
 
@@ -198,6 +208,15 @@ class Peer:
         Drains up to 50 messages from the socket without blocking.
         Returns False if the connection should be dropped.
         """
+        import time as _time
+        now = _time.time()
+        
+        # Timeout: if we have pending requests but no action for 60 seconds, drop.
+        if self.pending_requests > 0 and (now - self.last_action_time) > 60:
+            logger.debug(f"Peer {self.peer} stalled (no data for 60s) -- dropping.")
+            self.close()
+            return False
+
         try:
             for _ in range(50):
                 readable, _, _ = select.select([self.sock], [], [], 0.002)
@@ -205,7 +224,10 @@ class Peer:
                     break
                 msg = recv_by_length(self.sock)
                 if msg is False or msg is None:
+                    self.close()
                     return self.torrent_pieces is None  # OK only if still fetching metadata
+                
+                self.last_action_time = now
                 handle_response(self.sock, msg, self.torrent_pieces, self, self.torrent_download_files)
 
             if self.torrent_pieces is not None and not self.torrent_pieces.is_done():
@@ -213,4 +235,5 @@ class Peer:
             return True
 
         except Exception:
+            self.close()
             return self.torrent_pieces is None

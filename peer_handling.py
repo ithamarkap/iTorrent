@@ -139,6 +139,12 @@ def handle_piece(sock, payload, pieces, peer, download_files):
 
     peer.downloaded += len(block_data)
     peer.pending_requests = max(0, peer.pending_requests - 1)
+    
+    # Remove from in-flight tracking
+    import time as _time
+    peer.last_action_time = _time.time()
+    peer.in_flight_requests = [r for r in peer.in_flight_requests 
+                              if not (r['piece_index'] == piece_index and r['begin'] == begin)]
 
     request_piece_block(sock, pieces, peer)
 
@@ -178,6 +184,7 @@ def request_piece_block(sock, pieces, peer):
             try:
                 sock.send(pack_request(piece_block['piece_index'], piece_block['begin'], piece_block['length']))
                 pieces.add_request(piece_block)
+                peer.in_flight_requests.append(piece_block)
                 peer.pending_requests += 1
                 requests_made += 1
             except Exception:

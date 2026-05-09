@@ -87,7 +87,7 @@ def parse_magnet_link(magnet_url: str) -> TorrentClass:
 class TorrentClient:
     """Main torrent download/seed controller."""
 
-    MAX_PEER_CONNECTIONS = 75
+    MAX_PEER_CONNECTIONS = 200
 
     def __init__(self, torrent_path=None, magnet_url=None):
         self.torrent_path = torrent_path

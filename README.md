@@ -30,6 +30,13 @@ A BitTorrent client built in Python with Electron GUI.
    npm install
    ```
 
+## Quick Start (using the built-in Electron GUI)
+2. Start Electron GUI:
+   ```
+   cd gui/
+   npm start
+   ```
+
 ## Quick Start (using browser)
 1. Start Flask backend:
    ```
@@ -39,13 +46,6 @@ A BitTorrent client built in Python with Electron GUI.
 1. Open your favorite browser and navigate to:
    ```
    http://127.0.0.1:5000
-   ```
-
-## Quick Start (using the built-in Electron GUI)
-2. Start Electron GUI:
-   ```
-   cd gui/
-   npm start
    ```
 
 ## Development

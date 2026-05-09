@@ -85,10 +85,10 @@ document.addEventListener('DOMContentLoaded', function () {
             badge.classList.add('upnp-off');
         } else if (data.active) {
             const ip = data.externalIp ? ` ${data.externalIp}:${data.port}` : `:${data.port}`;
-            badge.textContent = `UPnP ✓${ip}`;
+            badge.textContent = `UPnP OK ${ip}`;
             badge.classList.add('upnp-active');
         } else {
-            badge.textContent = 'UPnP …';
+            badge.textContent = 'UPnP ...';
             badge.classList.add('upnp-searching');
         }
     }

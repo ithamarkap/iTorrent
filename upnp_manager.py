@@ -1,5 +1,5 @@
 """
-upnp_manager.py — UPnP automatic port-forwarding for iTorrent.
+upnp_manager.py -- UPnP automatic port-forwarding for iTorrent.
 
 Uses the `miniupnpc` library to discover the router's Internet Gateway
 Device (IGD) and add a TCP port mapping so that remote peers can reach us for
@@ -70,10 +70,10 @@ class UPnPManager:
             self._enabled = enabled
 
         if enabled:
-            logger.info('[UPnP] Enabled — setting up mapping.')
+            logger.info('[UPnP] Enabled -- setting up mapping.')
             self.setup(listen_port)
         else:
-            logger.info('[UPnP] Disabled — removing mapping.')
+            logger.info('[UPnP] Disabled -- removing mapping.')
             self.teardown()
 
     def get_status(self) -> dict:
@@ -90,7 +90,7 @@ class UPnPManager:
     def _setup_worker(self, port: int):
         with self._lock:
             if not self._enabled:
-                logger.info('[UPnP] Skipping setup — UPnP is disabled.')
+                logger.info('[UPnP] Skipping setup -- UPnP is disabled.')
                 return
 
             if self._active and self._port == port:
@@ -104,7 +104,7 @@ class UPnPManager:
         try:
             import miniupnpc
         except ImportError:
-            logger.warning('[UPnP] miniupnpc is not installed — run: pip install miniupnpc')
+            logger.warning('[UPnP] miniupnpc is not installed -- run: pip install miniupnpc')
             return
 
         try:
@@ -135,7 +135,7 @@ class UPnPManager:
                 self._external_ip = external_ip
 
             logger.info(
-                '[UPnP] ✓ Mapped external %s:%d → %s:%d (TCP)',
+                '[UPnP] OK: Mapped external %s:%d -> %s:%d (TCP)',
                 external_ip, port, local_ip, port,
             )
 
@@ -183,5 +183,5 @@ class UPnPManager:
             self._renew_timer = None
 
 
-# Module-level singleton — imported by gui/app.py
+# Module-level singleton -- imported by gui/app.py
 upnp_manager = UPnPManager()

@@ -196,7 +196,7 @@ def upnp_endpoint():
     if request.method == 'GET':
         return jsonify(upnp_manager.get_status())
 
-    # POST — toggle enable/disable
+    # POST -- toggle enable/disable
     data = request.json or {}
     enabled = data.get('enabled', True)
     upnp_manager.set_enabled(bool(enabled), _LISTEN_PORT)

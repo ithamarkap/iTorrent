@@ -333,7 +333,7 @@ class TorrentClient:
 
             # ── Seeding transition ────────────────────────────────────────────
             if self.pieces and self.pieces.is_done() and self.status != 'Seeding':
-                logger.info(f"{self.name} complete — switching to Seeding.")
+                logger.info(f"{self.name} complete -- switching to Seeding.")
                 self.status = 'Seeding'
                 self.download_speed = 0
                 if not has_announced_completed:
@@ -409,7 +409,7 @@ class TorrentClient:
                                     except Exception:
                                         pass
                             else:
-                                logger.warning(f"Piece {i} failed hash check — resetting.")
+                                logger.warning(f"Piece {i} failed hash check -- resetting.")
                                 for block_idx in range(len(self.pieces.received[i])):
                                     if self.pieces.received[i][block_idx]:
                                         self.pieces.received[i][block_idx] = False
@@ -489,7 +489,7 @@ class TorrentClient:
             import concurrent.futures
             self._connect_executor = concurrent.futures.ThreadPoolExecutor(max_workers=30)
             
-        # Fire and forget — don't block the main loop waiting for 3-second connect timeouts!
+        # Fire and forget -- don't block the main loop waiting for 3-second connect timeouts!
         for addr in batch:
             self._connect_executor.submit(try_connect, addr)
 

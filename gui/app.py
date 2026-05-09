@@ -1,11 +1,15 @@
 from flask import Flask, render_template, jsonify, request, Response
 import os
 import sys
+import atexit
+import signal
 import socket
 import random
 import logging
 import time
 import io
+import threading
+import time
 from collections import deque
 
 # Force UTF-8 encoding for stdout/stderr to prevent encoding issues on Windows
@@ -33,6 +37,7 @@ class _StreamRedirector:
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     encoding='utf-8')
+logger = logging.getLogger('app')
 _handler = _LogCaptureHandler()
 _handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logging.getLogger().addHandler(_handler)
@@ -78,6 +83,15 @@ for _p in range(6881, 6890):
         pass
 
 upnp_manager.setup(_LISTEN_PORT)
+atexit.register(upnp_manager.teardown)
+
+def _signal_handler(sig, frame):
+    logger.info(f'[UPnP] Caught signal {sig} -- shutting down.')
+    upnp_manager.teardown()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, _signal_handler)
+signal.signal(signal.SIGTERM, _signal_handler)
 
 active_torrents = []
 
@@ -220,6 +234,15 @@ def stream_logs():
                 last_len = current_len
             time.sleep(0.1)
     return Response(event_stream(), mimetype='text/event-stream')
+
+
+@app.route('/api/shutdown', methods=['POST'])
+def shutdown():
+    logger.info('Shutdown requested via API -- cleaning up.')
+    upnp_manager.teardown()
+    # Exit in a separate thread so we can return the response first
+    threading.Thread(target=lambda: (time.sleep(0.5), os._exit(0))).start()
+    return jsonify({'success': True})
 
 
 if __name__ == '__main__':

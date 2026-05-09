@@ -143,8 +143,11 @@ class Peer:
 
         except Exception as e:
             err = str(e)
-            if '[WinError 10061]' not in err and 'timed out' not in err:
-                logger.debug(f"Connection failed to {self.peer}: {e}")
+            # Quietly handle common network noise (Connection Refused, Timeout, Reset)
+            if any(code in err for code in ['10061', '10054', '10060', 'timed out']):
+                logger.debug(f"Connection noise from {self.peer}: {e}")
+            else:
+                logger.warning(f"Connection failed to {self.peer}: {e}")
             return False
 
     def accept_connection(self, client_sock) -> bool:

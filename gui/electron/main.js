@@ -51,11 +51,35 @@ function startFlask() {
     });
 }
 
-function stopFlask() {
+async function stopFlask() {
     if (flaskProcess) {
-        console.log('Stopping Flask process...');
-        flaskProcess.kill();
-        flaskProcess = null;
+        console.log('Stopping Flask process gracefully...');
+        try {
+            // Send a POST request to the shutdown endpoint
+            const req = http.request({
+                hostname: '127.0.0.1',
+                port: FLASK_PORT,
+                path: '/api/shutdown',
+                method: 'POST'
+            }, (res) => {
+                console.log('Shutdown request sent, status:', res.statusCode);
+            });
+            req.on('error', (e) => {
+                console.log('Shutdown request failed (process might already be dead):', e.message);
+            });
+            req.end();
+
+            // Wait up to 1 second for the backend to clean up UPnP
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (err) {
+            console.error('Error during graceful shutdown:', err);
+        }
+
+        if (flaskProcess) {
+            console.log('Killing Flask process...');
+            flaskProcess.kill();
+            flaskProcess = null;
+        }
     }
 }
 
@@ -110,8 +134,14 @@ app.on('window-all-closed', () => {
     }
 });
 
-app.on('will-quit', () => {
-    stopFlask();
+let isQuitting = false;
+app.on('will-quit', async (event) => {
+    if (flaskProcess && !isQuitting) {
+        event.preventDefault();
+        isQuitting = true;
+        await stopFlask();
+        app.quit();
+    }
 });
 
 // IPC Handlers

@@ -248,7 +248,12 @@ def send_extended_handshake(sock):
         msg = struct.pack(f'!IBB{len(payload)}s', msg_length, MessageID.EXTENDED, 0, payload)
         sock.send(msg)
     except Exception as e:
-        logger.error(f"Failed to send extended handshake: {e}")
+        err = str(e)
+        # Quietly handle common network noise (Connection Refused, Timeout, Reset)
+        if any(code in err for code in ['10061', '10054', '10060', 'timed out']):
+            logger.debug(f"Connection noise from {sock.getpeername() if sock else 'unknown'}: {e}")
+        else:
+            logger.warning(f"Failed to send extended handshake: {e}")
 
 
 def request_metadata_piece(sock, ut_metadata_id, piece_index):

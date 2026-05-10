@@ -1,7 +1,7 @@
 {
   "name": "iTorrent",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Ithamar's Torrent Client",
   "author": "Ithamar Kaplan",
   "main": "electron/main.js",

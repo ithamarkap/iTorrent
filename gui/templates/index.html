@@ -12,9 +12,10 @@
     <div id="root">
         <header>
             <h1>iTorrent</h1>
-        <div style="display: flex; align-items: center; gap: 15px;">
+            <div style="display: flex; align-items: center; gap: 15px;">
                 <button id="theme-toggle" class="secondary-btn" style="width: auto; margin: 0;">🌙</button>
-                <div id="upnp-badge" class="upnp-badge upnp-searching" title="UPnP port forwarding status">UPnP ...</div>
+                <div id="upnp-badge" class="upnp-badge upnp-searching" title="UPnP port forwarding status">UPnP ...
+                </div>
                 <div class="status">Online</div>
             </div>
         </header>
@@ -104,7 +105,8 @@
                             </label>
                             <span id="upnp-toggle-label" class="toggle-label">Enabled</span>
                         </div>
-                        <small>Automatically forwards port <span id="upnp-port">6881</span> on your router so peers can connect for seeding.</small>
+                        <small>Automatically forwards port <span id="upnp-port">6881</span> on your router so peers can
+                            connect for seeding.</small>
                     </div>
                 </div>
             </aside>
@@ -189,7 +191,8 @@
                             <div style="color: var(--text-secondary); font-size: 14px; margin-bottom: 10px;">
                                 Shows the latest peer IP:port that supplied each piece (updated as blocks arrive)
                             </div>
-                            <div id="piece-source-table-wrap" style="max-height: 280px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+                            <div id="piece-source-table-wrap"
+                                style="max-height: 280px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
                                 <table class="peer-table">
                                     <thead>
                                         <tr>
@@ -207,7 +210,8 @@
 
                 <div id="logs-view" class="tab-content">
                     <div class="log-controls">
-                        <button class="secondary-btn" id="clear-logs-btn" style="width: auto; margin-top: 0;">Clear Logs</button>
+                        <button class="secondary-btn" id="clear-logs-btn" style="width: auto; margin-top: 0;">Clear
+                            Logs</button>
                     </div>
                     <div id="log-container" class="log-container">
                         <!-- Logs will be injected here via JS -->
@@ -224,6 +228,26 @@
                 <div class="modal-actions">
                     <button id="modal-cancel-btn" class="secondary-btn">No</button>
                     <button id="modal-confirm-btn" class="primary-btn">Yes</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PIN Input Modal -->
+        <div id="pin-modal-overlay" class="modal-overlay">
+            <div class="modal-card">
+                <h3 id="pin-modal-title">Enter PIN</h3>
+                <p id="pin-modal-message">Please enter PIN to lock/unlock</p>
+                <input type="password" id="pin-input" class="form-group" inputmode="numeric" pattern="[0-9]*"
+                    style="width: 100%; margin: 10px 0; padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);"
+                    placeholder="PIN" maxlength="4" />
+                <input type="password" id="pin-confirm-input" class="form-group" inputmode="numeric" pattern="[0-9]*"
+                    style="width: 100%; margin: 10px 0; padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); display: none;"
+                    placeholder="Confirm PIN" maxlength="4" />
+                <div id="pin-modal-error"
+                    style="color: var(--error-color); font-size: 14px; margin-bottom: 10px; display: none;"></div>
+                <div class="modal-actions">
+                    <button id="pin-modal-cancel-btn" class="secondary-btn">Cancel</button>
+                    <button id="pin-modal-confirm-btn" class="primary-btn">Confirm</button>
                 </div>
             </div>
         </div>

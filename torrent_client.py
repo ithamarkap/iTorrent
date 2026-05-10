@@ -148,6 +148,7 @@ class TorrentClient:
         self.total_uploaded = 0
         self.start_time = time.time()
         self.status = 'Paused'
+        self.is_locked = False
 
         self.metadata_buffer = {}
 
@@ -326,6 +327,7 @@ class TorrentClient:
             'totalSize': self.total_size,
             'eta': eta,
             'infoHash': self.info_hash.hex(),
+            'is_locked': getattr(self, 'is_locked', False),
         }
 
 

@@ -63,6 +63,7 @@ if _parent not in sys.path:
 
 from torrent_client import TorrentClient, parse_torrent_file, parse_magnet_link, get_default_download_path
 from get_peer_list import TrackerClass
+import pin_manager
 
 # ── UPnP ─────────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,10 @@ def add_torrent():
         return jsonify({'success': False, 'error': 'Failed to initialize torrent'}), 400
 
     client.start()
+    
+    if pin_manager.is_torrent_locked(client.info_hash.hex()):
+        client.is_locked = True
+        
     active_torrents.append(client)
     return jsonify({'success': True, 'torrent': client.get_gui_data()})
 
@@ -123,6 +128,9 @@ def torrent_action(torrent_id):
 
     for client in active_torrents:
         if id(client) == torrent_id:
+            if action in ['pause', 'remove'] and getattr(client, 'is_locked', False):
+                return jsonify({'success': False, 'error': 'Torrent is locked'}), 403
+                
             if action == 'start':
                 client.is_downloading = True
                 if not (hasattr(client, 'thread') and client.thread and client.thread.is_alive()):
@@ -140,6 +148,40 @@ def torrent_action(torrent_id):
                 return jsonify({'success': True, 'removed': True})
             return jsonify({'success': True, 'torrent': client.get_gui_data()})
 
+    return jsonify({'success': False, 'error': 'Torrent not found'}), 404
+
+
+@app.route('/api/torrents/<int:torrent_id>/lock', methods=['POST'])
+def lock_torrent(torrent_id):
+    data = request.json
+    pin = data.get('pin')
+    if not pin:
+        return jsonify({'success': False, 'error': 'PIN required'}), 400
+
+    for client in active_torrents:
+        if id(client) == torrent_id:
+            pin_manager.lock_torrent(client.info_hash.hex(), pin)
+            client.is_locked = True
+            return jsonify({'success': True, 'torrent': client.get_gui_data()})
+            
+    return jsonify({'success': False, 'error': 'Torrent not found'}), 404
+
+
+@app.route('/api/torrents/<int:torrent_id>/unlock', methods=['POST'])
+def unlock_torrent(torrent_id):
+    data = request.json
+    pin = data.get('pin')
+    if not pin:
+        return jsonify({'success': False, 'error': 'PIN required'}), 400
+
+    for client in active_torrents:
+        if id(client) == torrent_id:
+            if pin_manager.unlock_torrent(client.info_hash.hex(), pin):
+                client.is_locked = False
+                return jsonify({'success': True, 'torrent': client.get_gui_data()})
+            else:
+                return jsonify({'success': False, 'error': 'Invalid PIN'}), 403
+            
     return jsonify({'success': False, 'error': 'Torrent not found'}), 404
 
 

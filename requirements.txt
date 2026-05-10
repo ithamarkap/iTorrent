@@ -3,4 +3,4 @@ flask
 python-dotenv
 miniupnpc
 upnpy
-
+cryptography

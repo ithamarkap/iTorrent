@@ -60,17 +60,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
     async function fetchUpnpStatus() {
         try {
-            const res  = await fetch('/api/upnp');
+            const res = await fetch('/api/upnp');
             const data = await res.json();
             updateUpnpBadge(data);
         } catch (_) { /* server not ready yet */ }
     }
 
     function updateUpnpBadge(data) {
-        const badge       = document.getElementById('upnp-badge');
-        const toggleEl    = document.getElementById('upnp-toggle');
+        const badge = document.getElementById('upnp-badge');
+        const toggleEl = document.getElementById('upnp-toggle');
         const toggleLabel = document.getElementById('upnp-toggle-label');
-        const portSpan    = document.getElementById('upnp-port');
+        const portSpan = document.getElementById('upnp-port');
 
         if (!badge) return;
 
@@ -99,10 +99,10 @@ document.addEventListener('DOMContentLoaded', function () {
         upnpToggle.addEventListener('change', async () => {
             const enabled = upnpToggle.checked;
             try {
-                const res  = await fetch('/api/upnp', {
-                    method:  'POST',
+                const res = await fetch('/api/upnp', {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify({ enabled }),
+                    body: JSON.stringify({ enabled }),
                 });
                 const data = await res.json();
                 updateUpnpBadge(data);
@@ -171,6 +171,19 @@ document.addEventListener('DOMContentLoaded', function () {
             const actionBtnClass = isPaused ? 'primary-btn' : 'secondary-btn';
             const action = isPaused ? 'start' : 'pause';
 
+            let actionsHtml = '';
+            if (torrent.is_locked) {
+                actionsHtml = `
+                <button class="secondary-btn" onclick="showPinModal('unlock', ${torrent.id})">Unlock</button>
+                `;
+            } else {
+                actionsHtml = `
+                <button class="${actionBtnClass}" onclick="handleTorrentAction(${torrent.id}, '${action}')">${actionBtnText}</button>
+                <button class="secondary-btn" onclick="showPinModal('lock', ${torrent.id})">Lock</button>
+                <button class="secondary-btn remove-btn" onclick="handleTorrentAction(${torrent.id}, 'remove')">Remove</button>
+                `;
+            }
+
             item.innerHTML = `
             <div class="torrent-info">
                 <div class="name">${torrent.name}</div>
@@ -185,8 +198,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>
             </div>
             <div class="torrent-actions">
-                <button class="${actionBtnClass}" onclick="handleTorrentAction(${torrent.id}, '${action}')">${actionBtnText}</button>
-                <button class="secondary-btn remove-btn" onclick="handleTorrentAction(${torrent.id}, 'remove')">Remove</button>
+                ${actionsHtml}
             </div>`;
 
             torrentListEl.appendChild(item);
@@ -194,7 +206,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Global helper so onclick attributes can open the Stats tab for a torrent
-    window.selectAndShowStats = function(torrentId) {
+    window.selectAndShowStats = function (torrentId) {
         selectedTorrentId = torrentId;
         document.querySelectorAll('.torrent-item').forEach(i => i.classList.remove('selected'));
         tabBtns.forEach(b => b.classList.remove('active'));
@@ -341,6 +353,107 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    window.showPinModal = function (action, torrentId) {
+        const overlay = document.getElementById('pin-modal-overlay');
+        const title = document.getElementById('pin-modal-title');
+        const message = document.getElementById('pin-modal-message');
+        const confirmBtn = document.getElementById('pin-modal-confirm-btn');
+        const cancelBtn = document.getElementById('pin-modal-cancel-btn');
+        const input = document.getElementById('pin-input');
+        const confirmInput = document.getElementById('pin-confirm-input');
+        const errorDiv = document.getElementById('pin-modal-error');
+
+        input.value = '';
+        if (confirmInput) confirmInput.value = '';
+        errorDiv.style.display = 'none';
+
+        if (action === 'lock') {
+            title.textContent = 'Lock Torrent';
+            message.innerHTML = 'Enter a PIN to lock this torrent. You will need this PIN to pause or remove it.<br><small style="color: var(--text-secondary); margin-top: 8px; display: block;">If you forget the PIN, the only way to remove this torrent is to restart the application.</small>';
+            confirmBtn.textContent = 'Lock';
+            if (confirmInput) confirmInput.style.display = 'block';
+        } else {
+            title.textContent = 'Unlock Torrent';
+            message.innerHTML = 'Enter PIN to unlock this torrent.';
+            confirmBtn.textContent = 'Unlock';
+            if (confirmInput) confirmInput.style.display = 'none';
+        }
+
+        overlay.classList.add('active');
+        input.focus();
+
+        const handleConfirm = async () => {
+            const pin = input.value.trim();
+            if (!pin || !/^\d+$/.test(pin)) {
+                errorDiv.textContent = 'PIN must be numeric and cannot be empty.';
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            if (action === 'lock') {
+                const pinConfirm = confirmInput ? confirmInput.value.trim() : '';
+                if (pin !== pinConfirm) {
+                    errorDiv.textContent = 'PINs do not match. Please try again.';
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+            }
+
+            try {
+                const response = await fetch(`/api/torrents/${torrentId}/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pin })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    cleanup();
+                    fetchTorrents();
+                } else {
+                    errorDiv.textContent = result.error || 'Invalid PIN';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Error communicating with server';
+                errorDiv.style.display = 'block';
+            }
+        };
+
+        const handleCancel = () => {
+            cleanup();
+        };
+
+        const cleanup = () => {
+            overlay.classList.remove('active');
+            confirmBtn.removeEventListener('click', handleConfirm);
+            cancelBtn.removeEventListener('click', handleCancel);
+            input.removeEventListener('keypress', handleKeyPress);
+            input.removeEventListener('input', enforceNumeric);
+            if (confirmInput) {
+                confirmInput.removeEventListener('keypress', handleKeyPress);
+                confirmInput.removeEventListener('input', enforceNumeric);
+            }
+        };
+
+        const handleKeyPress = (e) => {
+            if (e.key === 'Enter') handleConfirm();
+        };
+
+        const enforceNumeric = (e) => {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+        };
+
+        confirmBtn.addEventListener('click', handleConfirm);
+        cancelBtn.addEventListener('click', handleCancel);
+        input.addEventListener('keypress', handleKeyPress);
+        input.addEventListener('input', enforceNumeric);
+        if (confirmInput) {
+            confirmInput.addEventListener('keypress', handleKeyPress);
+            confirmInput.addEventListener('input', enforceNumeric);
+        }
+    };
+
     function updateStatistics() {
         const noSelection = document.getElementById('no-torrent-selected');
         const statsContainer = document.getElementById('stats-container');
@@ -371,12 +484,12 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('stat-total-downloaded').textContent = formatBytes(torrent.totalDownloaded);
         document.getElementById('stat-total-uploaded').textContent = formatBytes(torrent.totalUploaded);
         document.getElementById('stat-total-size').textContent = formatBytes(torrent.totalSize);
-        
+
         const ratio = torrent.totalDownloaded > 0 ? (torrent.totalUploaded / torrent.totalDownloaded).toFixed(2) : '0.00';
         document.getElementById('stat-ratio').textContent = ratio;
         document.getElementById('stat-peers').textContent = torrent.peerCount;
         document.getElementById('stat-elapsed').textContent = formatTime(torrent.elapsedTime);
-        
+
         // Calculate ETA
         if (torrent.progress >= 100 || torrent.status === 'Paused' || parseFloat(torrent.downloadSpeed) === 0) {
             document.getElementById('stat-eta').textContent = '∞';
@@ -385,7 +498,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (torrent.downloadSpeed.includes('GB/s')) speedBytes *= 1073741824;
             else if (torrent.downloadSpeed.includes('MB/s')) speedBytes *= 1048576;
             else if (torrent.downloadSpeed.includes('KB/s')) speedBytes *= 1024;
-            
+
             const remainingBytes = (100 - torrent.progress) / 100 * torrent.totalSize;
             const etaSeconds = remainingBytes / speedBytes;
             document.getElementById('stat-eta').textContent = formatTime(etaSeconds);
@@ -475,7 +588,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
         const s = Math.floor(seconds % 60);
-        
+
         let result = '';
         if (h > 0) result += h + 'h ';
         if (m > 0 || h > 0) result += m + 'm ';
@@ -591,10 +704,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function setupLogStream() {
         const source = new EventSource('/api/logs/stream');
-        source.onmessage = function(event) {
+        source.onmessage = function (event) {
             renderLogs([event.data], false); // false means append
         };
-        source.onerror = function(err) {
+        source.onerror = function (err) {
             console.error('EventSource failed:', err);
             source.close();
             // Retry after 5 seconds

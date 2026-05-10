@@ -479,7 +479,7 @@ class TorrentClient:
     # ── Tracker ───────────────────────────────────────────────────────────────
 
     def _get_peer_list(self, event=0):
-        from get_peer_list import TrackerClass
+        from tracker_client import TrackerClass
         logger.info(f"Contacting trackers for {self.name}...")
 
         current_downloaded = self.session_downloaded

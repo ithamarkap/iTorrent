@@ -62,7 +62,7 @@ if _parent not in sys.path:
     sys.path.insert(0, _parent)
 
 from torrent_client import TorrentClient, parse_torrent_file, parse_magnet_link, get_default_download_path
-from get_peer_list import TrackerClass
+from tracker_client import TrackerClass
 import pin_manager
 
 # ── UPnP ─────────────────────────────────────────────────────────────────────

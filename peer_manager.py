@@ -84,7 +84,7 @@ class Peer:
         self.peer_interested = False
         self.am_choking = True
         self.available_pieces = set()
-        self.in_flight_requests = []
+        self.in_flight_requests = {}
         import time as _time
         self.last_action_time = _time.time()
 
@@ -196,9 +196,9 @@ class Peer:
         
         # Reclaim orphaned requests
         if self.in_flight_requests and self.torrent_pieces:
-            for block in self.in_flight_requests:
+            for block in self.in_flight_requests.values():
                 self.torrent_pieces.remove_request(block)
-            self.in_flight_requests = []
+            self.in_flight_requests = {}
             self.pending_requests = 0
 
     # ── Communication ─────────────────────────────────────────────────────────

@@ -151,8 +151,7 @@ def handle_piece(sock, payload, pieces, peer, download_files):
     # Remove from in-flight tracking
     import time as _time
     peer.last_action_time = _time.time()
-    peer.in_flight_requests = [r for r in peer.in_flight_requests 
-                              if not (r['piece_index'] == piece_index and r['begin'] == begin)]
+    peer.in_flight_requests.pop((piece_index, begin), None)
 
     request_piece_block(sock, pieces, peer)
 
@@ -184,18 +183,16 @@ def request_piece_block(sock, pieces, peer):
                     if length > 0:
                         peer.queue.append({'piece_index': piece_idx, 'begin': begin, 'length': length})
 
-    MAX_PIPELINE = 200
-    requests_made = 0
-    while not peer.empty() and peer.pending_requests < MAX_PIPELINE and requests_made < 50:
+    MAX_PIPELINE = 500
+    while not peer.empty() and peer.pending_requests < MAX_PIPELINE:
         piece_block = peer.pop()
         
         if pieces.needed(piece_block):
             try:
                 sock.send(pack_request(piece_block['piece_index'], piece_block['begin'], piece_block['length']))
                 pieces.add_request(piece_block)
-                peer.in_flight_requests.append(piece_block)
+                peer.in_flight_requests[(piece_block['piece_index'], piece_block['begin'])] = piece_block
                 peer.pending_requests += 1
-                requests_made += 1
             except Exception:
                 peer.queue.insert(0, piece_block)
                 break

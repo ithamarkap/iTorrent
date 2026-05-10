@@ -553,7 +553,7 @@ class TorrentClient:
 
         if not hasattr(self, '_comm_executor'):
             import concurrent.futures
-            self._comm_executor = concurrent.futures.ThreadPoolExecutor(max_workers=128)
+            self._comm_executor = concurrent.futures.ThreadPoolExecutor(max_workers=64)
             self._active_tasks = set()
 
         def _comm(peer):
@@ -568,14 +568,16 @@ class TorrentClient:
                 self._active_tasks.discard(peer)
             bad = future.result()
             if bad:
-                try:
-                    self.connected_peers.remove(bad)
-                except ValueError:
-                    pass
-                try:
-                    self.peer_list.remove(bad.peer)
-                except ValueError:
-                    pass
+                if bad in self.connected_peers:
+                    try:
+                        self.connected_peers.remove(bad)
+                    except ValueError:
+                        pass
+                if bad.peer in self.peer_list:
+                    try:
+                        self.peer_list.remove(bad.peer)
+                    except ValueError:
+                        pass
 
         for peer in peers:
             if peer not in self._active_tasks:

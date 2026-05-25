@@ -1,8 +1,4 @@
-<p align="center">
-  <img src="https://upload.wikimedia.org/wikipedia/he/thumb/1/15/Ministry_of_Education.svg/1920px-Ministry_of_Education.svg.png" width="100" />
-</p>
-
-# 🚀 iTorrent
+# <img src="https://iili.io/CJgfwv9.png" width="30" /> iTorrent
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=for-the-badge&logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-Server-000000?style=for-the-badge&logo=flask&logoColor=white)

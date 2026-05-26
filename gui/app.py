@@ -121,6 +121,7 @@ def add_torrent():
     return jsonify({'success': True, 'torrent': client.get_gui_data()})
 
 
+# torrent_id is an id of a TorrentClient instance, generated from id() function
 @app.route('/api/torrents/<int:torrent_id>/action', methods=['POST'])
 def torrent_action(torrent_id):
     data = request.json
@@ -153,6 +154,7 @@ def torrent_action(torrent_id):
 
 @app.route('/api/torrents/<int:torrent_id>/lock', methods=['POST'])
 def lock_torrent(torrent_id):
+    # Accesses the JSON data sent in the body of an HTTP request
     data = request.json
     pin = data.get('pin')
     if not pin:

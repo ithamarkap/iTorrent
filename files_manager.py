@@ -3,6 +3,13 @@ from hashlib import sha1
 import threading
 
 class Files:
+    # The files parameter is a list of dictionaries that contain the file information.
+    # Each dictionary has the following keys:
+    #   - 'path': The path to the file.
+    #   - 'length': The length of the file in bytes.
+    # The relative_directory parameter is the path to the directory where the files should be stored.
+    # The relative_directory comes from torrent_client's _setup_download_files() method.
+    
     def __init__(self, piece_size, pieces_hash, files, relative_directory):
         self.piece_size = piece_size
         self.pieces_hash = pieces_hash
@@ -53,14 +60,33 @@ class Files:
             return True
 
     def check_piece_hash(self, piece_index: int) -> bool:
+        '''
+        Extracts the expected SHA-1 hash of the piece (20 bytes long) from the 
+        pieces_hash list, calculates the global offset and the actual length of the piece (to handle cases where the last piece is shorter),
+        reads the piece data from the disk using the private _read function, and returns True if the SHA-1 hash of the read data matches the expected hash,
+        or False if they do not match.
+        '''
         if not self.pieces_hash:
             return False
+        
+        # 20 bytes per piece hash
         expected = self.pieces_hash[piece_index * 20:(piece_index + 1) * 20]
+        # get the global offset and piece length
         global_offset = piece_index * self.piece_size
         piece_len = min(self.piece_size, self._total_size - global_offset)
+        # read the piece data and compare its hash with the expected hash
         return sha1(self._read(global_offset, piece_len)).digest() == expected
 
     def write(self, piece_index: int, byte_index: int, data: bytes):
+        """
+        Receives access to the Files class and the parameters: piece_index - integer, byte_index - integer, and data in bytes.
+        Writes data to the appropriate disk locations based on the piece index and its offset.
+        It calculates the global offset in the torrent address space and searches in file_map
+        for files whose range overlaps with the new data. For each matching file, it calculates
+        the internal position and the amount of data to be written, and performs the actual write
+        using _write_to_file.
+        """
+        # global_offset is how far into the entire torrent file the current data starts
         global_offset = piece_index * self.piece_size + byte_index
         bytes_to_write = len(data)
         data_offset = 0
@@ -77,6 +103,13 @@ class Files:
                 break
 
     def _get_file_handle(self, file_path):
+        """
+        Receives access to the Files class and the parameters: file_path - string representing the file path.
+        Manages and returns an open file handle for the requested file. The function saves the open
+        handles in the self._file_handles dictionary to avoid repeatedly opening and closing files.
+        If the file does not exist or opening it fails, it creates the file and opens it in binary
+        read-write ('r+b') mode.
+        """
         if file_path not in self._file_handles:
             try:
                 self._file_handles[file_path] = open(file_path, 'r+b')
@@ -88,12 +121,25 @@ class Files:
         return self._file_handles[file_path]
 
     def _write_to_file(self, file_path: str, position: int, data: bytes):
+        """
+        Receives access to the Files class and the parameters: file_path - string representing the file path, position - integer representing the position in the file, and data in bytes.
+        Writes data to a specific file at a defined position on the disk using a locking mechanism
+        (self._lock) to prevent conflicts between threads. It gets the file handle using
+        _get_file_handle, moves the write cursor to the requested position (seek), and writes the data.
+        """
         with self._lock:
             f = self._get_file_handle(file_path)
             f.seek(position)
             f.write(data)
 
     def _read(self, global_offset: int, length: int) -> bytes:
+        """
+        Receives access to the Files class and the parameters: global_offset - integer representing the global offset, and length - integer representing the length of the data to read in bytes.
+        Reads a specific amount of bytes from the global offset of the torrent, crossing file boundaries
+        if necessary. It iterates over file_map and locates the files belonging to the requested read range.
+        For each file, it safely accesses the file handle under locking, reads the relevant data, and appends
+        it to a single bytearray. In case of a read failure, it fills the missing bytes with null bytes (\x00).
+        """
         data = bytearray()
         bytes_read = 0
 
@@ -119,6 +165,13 @@ class Files:
         return bytes(data)
 
     def delete_files(self) -> bool:
+        """
+        Receives access to the Files class (no additional parameters).
+        Deletes all torrent files and the download directory from the disk. First, it safely closes all
+        open file handles and clears self._file_handles. Then, it physically deletes each file listed in
+        file_map, and finally deletes the main torrent download directory using shutil.rmtree.
+        Returns True on success and False on failure.
+        """
         import shutil
         try:
             with self._lock:

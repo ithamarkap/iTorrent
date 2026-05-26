@@ -4,7 +4,9 @@ logger = logging.getLogger('PiecesManager')
 
 BLOCK_SIZE = 16384
 
-
+''' Pieces class represents the pieces of the torrent file.
+This class is used to keep track of which pieces have been downloaded and which pieces have been sent to peers.
+'''
 class Pieces:
     def __init__(self, piece_size, piece_amount, total_size):
         self.piece_size = piece_size
@@ -21,7 +23,10 @@ class Pieces:
 
     def _setup_lists_by_blocks(self):
         for piece_index in range(self.piece_amount):
+            # determine the size of the piece
+            # piece_sz is the size of the current piece being processed
             piece_sz = self.determine_piece_size(piece_index)
+            # determine the number of blocks in the piece
             number_of_blocks = (piece_sz + BLOCK_SIZE - 1) // BLOCK_SIZE
 
             self.requested.append([False] * number_of_blocks)
@@ -98,6 +103,7 @@ class PieceManager:
             self.seeders_pieces[seeder_addr] = [False] * self.pieces.piece_amount
             logger.info(f"Added seeder {seeder_addr} to PieceManager.")
 
+    # Updating the list of available pieces for the seeder
     def update_seeder_bitfield(self, seeder_addr, bitfield):
         if len(bitfield) == self.pieces.piece_amount:
             self.seeders_pieces[seeder_addr] = bitfield

@@ -85,12 +85,13 @@ class NetworkEngine:
     def _handle_incoming(self, sock, addr):
         try:
             sock.settimeout(5.0)
-            # Read the initial handshake to identify the torrent
+            # Read the initial handshake and check if it's valid + save it
             handshake = recv_handshake(sock)
             if not handshake or not is_handshake(handshake):
                 sock.close()
                 return
 
+            # Extract info_hash from the handshake (first 20 bytes)
             info_hash = handshake[28:48]
             
             with self._lock:
@@ -103,7 +104,8 @@ class NetworkEngine:
 
             logger.info(f"Routing incoming connection from {addr} to torrent: {client.name}")
             
-            # Create the Peer object
+            # Create the Peer object and fill it with the torrent info from the client object
+            # This way the peer doesn't need to access the client object directly
             peer_obj = Peer(addr, client.info_hash, client.peer_id,
                             pieces=client.pieces, piece_size=client.piece_size,
                             piece_amount=client.piece_amount, total_size=client.total_size,

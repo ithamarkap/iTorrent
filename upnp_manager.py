@@ -118,10 +118,12 @@ class UPnPManager:
                 logger.warning('[UPnP] No UPnP devices found.')
                 return
             
-            # selectigd() chooses the best IGD found
+            # selectigd() chooses the best IGD found (the router)
             upnp.selectigd()
             
+            # get the router's local IP address
             local_ip = upnp.lanaddr
+            # get the router's external IP address
             external_ip = upnp.externalipaddress()
             
             # Add port mapping (TCP)
